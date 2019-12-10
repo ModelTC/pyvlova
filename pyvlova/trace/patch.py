@@ -96,10 +96,10 @@ def my_range(left, right=None, step=None):
     var = sympy.var(var_name)
 
     if step == 1:
-        constraint = (left <= var) & (var < right)
+        constraint = sympy.And(left <= var, var < right)
     else:
-        constraint = (left <= var) & (var < right) \
-            & (var % step == left % step)
+        constraint = sympy.And(left <= var, var < right,
+            sympy.Eq((var - left) % step, 0))
 
     current_status.push_constraint(constraint)
     yield var

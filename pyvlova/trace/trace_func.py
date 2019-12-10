@@ -2,6 +2,7 @@ import inspect
 import astor
 
 from .trace import current_status
+from ..tensor.dummy_tensor import DummyTensor
 
 
 class TracableFuncMeta(type):
@@ -30,7 +31,14 @@ class TracableCalcFunc(metaclass=TracableFuncMeta):
     def __call__(self, *args, **kwargs):
         if current_status.tracing:
             print('Tracing', self.pretty_func.__name__)
-            return self.pretty_func(*args, **kwargs)
+            for arg in args:
+                if isinstance(arg, DummyTensor) and not arg._wrapped:
+                    current_status.push_tensor(arg)
+            res = self.pretty_func(*args, **kwargs)
+            for arg in args[::-1]:
+                if isinstance(arg, DummyTensor) and not arg._wrapped:
+                    current_status.pop_tensor()
+            return res
         else:
             return self.plain_func(*args, **kwargs)
 
