@@ -68,6 +68,10 @@ class GPUTileConfigSpace(object):
                 for k in range(self.m):
                     self.gt[i][j][k] = self.g(i, self.a[j], self.a[k])
 
+    @property
+    def space_map(self):
+        return {'tile': self}
+
     def get(self, index):
         return GPUTileConfigEntity(index, len(self), self[index])
 
