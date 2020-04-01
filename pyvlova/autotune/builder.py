@@ -13,7 +13,7 @@ def _poly_build_func_common(measure_input, check_gpu=None, cuda_arch=None, build
     """Common part for building a configuration"""
     target, task, config = measure_input
     with target:
-        lowered_func = task.instantiate(config)
+        lowered_func, tensors = task.instantiate(config)
 
         # check invalidity of template and code hash consistency
         if not config.valid:
@@ -27,7 +27,7 @@ def _poly_build_func_common(measure_input, check_gpu=None, cuda_arch=None, build
 
         with build_config(**opts):
             func = tvm.build(lowered_func)
-    return func, tuple()
+    return func, [(i.shape, i.dtype) for i in tensors]
 
 
 def _poly_wrap_build_func(build_func):

@@ -257,7 +257,7 @@ def build_tvm_stmts(name, tree, parser: ISLNode2TIR):
             tvm.driver.build_module.get_binds = old_get_binds
             tvm.driver.build_module.form_body = old_form_body
 
-    return stmts
+    return stmts, tensors
 
 
 from ..polyhedral.statement import example_tensor_table, example_statements, N, M, Q
@@ -275,7 +275,7 @@ tree.gpu_tile([7, 7])
 
 print(tree.to_yaml())
 
-stmts = build_tvm_stmts('example_to_tvm', tree, parser)
+stmts, _ = build_tvm_stmts('example_to_tvm', tree, parser)
 print(stmts.body)
 
 ctx = tvm.gpu()

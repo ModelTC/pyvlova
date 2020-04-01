@@ -170,7 +170,7 @@ tree.apply_params(n=512, m=512, q=1024)
 task = GPUTileTask('example', tree, parser)
 print(task.config_space)
 
-print(task.instantiate(task.config_space.get(0)).body)
+print(task.instantiate(task.config_space.get(0))[0].body)
 
 logging.getLogger('autotvm').setLevel(logging.DEBUG)
 logging.getLogger('autotvm').addHandler(logging.StreamHandler(sys.stdout))
