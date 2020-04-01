@@ -3,6 +3,7 @@ import sys
 from functools import reduce
 
 import tvm
+import numpy
 from tvm import autotvm
 from tvm.autotvm import ConfigSpace, LocalRunner
 from tvm.autotvm.task import Task
@@ -15,20 +16,27 @@ GPU_MAX_THREADS = 512
 
 
 class GPUTileConfigEntity(list):
-    def __init__(self, index, *args, **kwargs):
+    def __init__(self, index, total, *args, **kwargs):
         super(GPUTileConfigEntity, self).__init__(*args, **kwargs)
         self.index = index
+        self.total = total
 
     @property
     def valid(self):
         return True
 
     def to_json_dict(self):
-        return {'index': self.index, 'tile': self}
+        return {'index': self.index, 'total': self.total, 'tile': self}
 
     @staticmethod
     def from_json_dict(d):
-        return GPUTileConfigEntity(d['index'], d['tile'])
+        return GPUTileConfigEntity(d['index'], d['total'], d['tile'])
+
+    def get_flatten_feature(self):
+        return numpy.array([self.index / self.total], dtype=numpy.float32)
+
+    def get_other_option(self):
+        return {}
 
 
 class GPUTileConfigSpace(object):
@@ -61,7 +69,7 @@ class GPUTileConfigSpace(object):
                     self.gt[i][j][k] = self.g(i, self.a[j], self.a[k])
 
     def get(self, index):
-        return GPUTileConfigEntity(index, self[index])
+        return GPUTileConfigEntity(index, len(self), self[index])
 
     def __len__(self):
         return self.size()
@@ -182,15 +190,12 @@ print(task.instantiate(task.config_space.get(0))[0].body)
 logging.getLogger('autotvm').setLevel(logging.DEBUG)
 logging.getLogger('autotvm').addHandler(logging.StreamHandler(sys.stdout))
 
-# There are two steps for measuring a config: build and run.
-# By default, we use all CPU cores to compile program. Then measure them sequentially.
-# We measure 5 times and take average to reduce variance.
 measure_option = {
     'builder': PolyLocalBuilder(),
-    'runner': LocalRunner(number=5),
+    'runner': LocalRunner(number=6, min_repeat_ms=100, timeout=4),
 }
 
-tuner = autotvm.tuner.RandomTuner(task)
-tuner.tune(n_trial=10,
+tuner = autotvm.tuner.XGBTuner(task)
+tuner.tune(n_trial=2000,
            measure_option=measure_option,
            callbacks=[autotvm.callback.log_to_file('example.log')])
