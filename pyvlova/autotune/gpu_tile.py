@@ -10,7 +10,6 @@ from tvm.autotvm.task import Task
 
 from pyvlova.codegen.isl_to_tir import build_tvm_stmts
 from pyvlova.polyhedral.schedule_tree import ScheduleTree
-from .tvm_patch import patch_ana_lower
 
 GPU_MAX_THREADS = 512
 
@@ -26,11 +25,11 @@ class GPUTileConfigEntity(list):
         return True
 
     def to_json_dict(self):
-        return {'index': self.index, 'total': self.total, 'tile': self}
+        return {'index': str(self.index), 'total': str(self.total), 'tile': list(map(str, self))}
 
     @staticmethod
     def from_json_dict(d):
-        return GPUTileConfigEntity(d['index'], d['total'], d['tile'])
+        return GPUTileConfigEntity(int(d['index']), int(d['total']), list(map(int, d['tile'])))
 
     def get_flatten_feature(self):
         return numpy.array([self.index / self.total], dtype=numpy.float32)
@@ -176,7 +175,6 @@ class GPUTileTask(Task):
         self.flop = reduce(float.__mul__, map(float, band_size))
 
     def instantiate(self, config):
-        patch_ana_lower()
         tree = self.tree.copy()
         tree.gpu_tile(config)
         return build_tvm_stmts(self.name, tree, self.parser)
@@ -186,7 +184,7 @@ from ..codegen.isl_to_tir import parser, example_tree
 from .builder import PolyLocalBuilder
 
 tree = example_tree.copy()
-tree.apply_params(n=512, m=512, q=1024)
+tree.apply_params(n=1024, m=1024, q=2048)
 task = GPUTileTask('example', tree, parser)
 print(task.config_space)
 
@@ -200,7 +198,7 @@ measure_option = {
     'runner': LocalRunner(number=6, min_repeat_ms=100, timeout=4),
 }
 
-tuner = autotvm.tuner.XGBTuner(task)
+tuner = autotvm.tuner.XGBTuner(task, feature_type='knob')
 tuner.tune(n_trial=2000,
            measure_option=measure_option,
            callbacks=[autotvm.callback.log_to_file('example.log')])
