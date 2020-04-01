@@ -11,6 +11,9 @@ from pyvlova.codegen.isl_to_tir import build_tvm_stmts
 from pyvlova.polyhedral.schedule_tree import ScheduleTree
 
 
+GPU_MAX_THREADS = 512
+
+
 class GPUTileConfigEntity(list):
     def __init__(self, index, *args, **kwargs):
         super(GPUTileConfigEntity, self).__init__(*args, **kwargs)
@@ -154,7 +157,7 @@ class GPUTileTask(Task):
         self.tree = tree
         self.parser = parser
         _, band_size, *_ = tree.parallel_tilable()
-        self.config_space = GPUTileConfigSpace(1024, band_size)
+        self.config_space = GPUTileConfigSpace(GPU_MAX_THREADS, band_size)
         self.target = tvm.target.create('cuda')
 
         # TODO: better flop prediction
