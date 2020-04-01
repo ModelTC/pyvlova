@@ -25,11 +25,11 @@ class ISLReprPrinter(sympy.StrPrinter):
         return super()._print_Relational(expr)
 
 
-def constraint_to_isl_repr(constraint):
-    return ISLReprPrinter().doprint(constraint)
+def parse_sympy_to_isl_repr(expr):
+    return ISLReprPrinter().doprint(expr)
 
 
 def constraints_to_isl_repr(constraints):
-    return constraint_to_isl_repr(
+    return parse_sympy_to_isl_repr(
         functools.reduce(sympy.And, constraints, True)
     )
