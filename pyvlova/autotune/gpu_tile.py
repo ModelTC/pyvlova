@@ -1,5 +1,6 @@
 import logging
 import sys
+from functools import reduce
 
 import tvm
 from tvm import autotvm
@@ -155,6 +156,9 @@ class GPUTileTask(Task):
         _, band_size, *_ = tree.parallel_tilable()
         self.config_space = GPUTileConfigSpace(1024, band_size)
         self.target = tvm.target.create('cuda')
+
+        # TODO: better flop prediction
+        self.flop = reduce(float.__mul__, map(float, band_size))
 
     def instantiate(self, config):
         tree = self.tree.copy()
