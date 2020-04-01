@@ -10,7 +10,7 @@ from tvm.autotvm.task import Task
 
 from pyvlova.codegen.isl_to_tir import build_tvm_stmts
 from pyvlova.polyhedral.schedule_tree import ScheduleTree
-
+from .tvm_patch import patch_ana_lower
 
 GPU_MAX_THREADS = 512
 
@@ -176,6 +176,7 @@ class GPUTileTask(Task):
         self.flop = reduce(float.__mul__, map(float, band_size))
 
     def instantiate(self, config):
+        patch_ana_lower()
         tree = self.tree.copy()
         tree.gpu_tile(config)
         return build_tvm_stmts(self.name, tree, self.parser)
