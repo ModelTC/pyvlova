@@ -5,6 +5,7 @@ import tvm
 import numpy
 from tvm import autotvm
 
+from .utils import load_best
 from ..codegen.isl_to_tir import build_tvm_stmts, CUDANode2TIRParser
 from ..polyhedral.schedule_tree import ScheduleTree
 
@@ -207,13 +208,19 @@ def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
         ]
     )
 
-    best = autotvm.task.dispatcher.ApplyHistoryBest(tmp_file_name)
-    print(best.best_by_targetkey.keys())
+    best = load_best(tmp_file_name, task)
+    GPUTileConfigEntity.from_json_dict(best)
+
+    tree = tree.copy()
+    tree.gpu_tile(best)
 
     try:
         os.remove(tmp_file_name)
     except Exception as e:
         print(e)
 
+    return tree
 
-tune_gpu_tile('example', tree, parser)
+
+new_tree = tune_gpu_tile('example', tree, parser)
+print(new_tree.to_yaml())
