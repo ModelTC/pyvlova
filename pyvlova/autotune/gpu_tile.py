@@ -1,15 +1,13 @@
-import logging
-import sys
+import os
 from functools import reduce
 
 import tvm
 import numpy
 from tvm import autotvm
-from tvm.autotvm import ConfigSpace, LocalRunner
-from tvm.autotvm.task import Task
 
-from pyvlova.codegen.isl_to_tir import build_tvm_stmts
-from pyvlova.polyhedral.schedule_tree import ScheduleTree
+from ..codegen.isl_to_tir import build_tvm_stmts, CUDANode2TIRParser
+from ..polyhedral.schedule_tree import ScheduleTree
+
 
 GPU_MAX_THREADS = 512
 
@@ -162,7 +160,7 @@ class GPUTileConfigSpace(object):
         return self._f(k, n)
 
 
-class GPUTileTask(Task):
+class GPUTileTask(autotvm.task.Task):
     def __init__(self, name, tree: ScheduleTree, parser):
         super(GPUTileTask, self).__init__(name, [])
         self.tree = tree
@@ -185,20 +183,37 @@ from .builder import PolyLocalBuilder
 
 tree = example_tree.copy()
 tree.apply_params(n=1024, m=1024, q=2048)
-task = GPUTileTask('example', tree, parser)
-print(task.config_space)
 
-print(task.instantiate(task.config_space.get(0))[0].body)
 
-logging.getLogger('autotvm').setLevel(logging.DEBUG)
-logging.getLogger('autotvm').addHandler(logging.StreamHandler(sys.stdout))
+def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
+         n_trial=40, builder=None, runner=None, tuner=None, callbacks=None) -> ScheduleTree:
+    task = GPUTileTask(name, tree.copy(), parser)
 
-measure_option = {
-    'builder': PolyLocalBuilder(),
-    'runner': LocalRunner(number=6, min_repeat_ms=100, timeout=4),
-}
+    measure_option = {
+        'builder': builder or PolyLocalBuilder(),
+        'runner': runner or autotvm.LocalRunner(number=6, min_repeat_ms=100, timeout=4),
+    }
 
-tuner = autotvm.tuner.XGBTuner(task, feature_type='knob')
-tuner.tune(n_trial=2000,
-           measure_option=measure_option,
-           callbacks=[autotvm.callback.log_to_file('example.log')])
+    tmp_file_name = f'{name}.gpu_tile.log'
+
+    tuner = tuner or autotvm.tuner.XGBTuner(task, feature_type='knob')
+    tuner.tune(
+        n_trial=n_trial,
+        measure_option=measure_option,
+        callbacks=[
+            autotvm.callback.progress_bar(n_trial, prefix=f'GPUTile {name}'),
+            autotvm.callback.log_to_file(tmp_file_name),
+            *(callbacks or [])
+        ]
+    )
+
+    best = autotvm.task.dispatcher.ApplyHistoryBest(tmp_file_name)
+    print(best.best_by_targetkey.keys())
+
+    try:
+        os.remove(tmp_file_name)
+    except Exception as e:
+        print(e)
+
+
+tune_gpu_tile('example', tree, parser)
