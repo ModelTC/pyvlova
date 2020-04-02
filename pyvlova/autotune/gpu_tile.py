@@ -192,12 +192,16 @@ def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
 
     measure_option = {
         'builder': builder or PolyLocalBuilder(),
-        'runner': runner or autotvm.LocalRunner(number=6, min_repeat_ms=100, timeout=4),
+        'runner': runner or autotvm.LocalRunner(number=6, min_repeat_ms=100, timeout=20),
     }
 
     tmp_file_name = f'{name}.gpu_tile.log'
 
-    tuner = tuner or autotvm.tuner.XGBTuner(task, feature_type='knob')
+    if tuner is None:
+        tuner = autotvm.tuner.XGBTuner(task, feature_type='knob')
+    else:
+        tuner = tuner(task)
+
     tuner.tune(
         n_trial=n_trial,
         measure_option=measure_option,
@@ -211,7 +215,7 @@ def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
     best, best_cost = load_best(tmp_file_name, task)
     best = GPUTileConfigEntity.from_json_dict(best)
 
-    print('GPUTile %s: best cost %.12f' % (name, best_cost))
+    print('GPUTile %s: best %s, best cost %.12f' % (name, repr(best), best_cost))
 
     tree = tree.copy()
     tree.gpu_tile(best)
@@ -224,5 +228,16 @@ def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
     return tree
 
 
-new_tree = tune_gpu_tile('example', tree, parser)
+new_tree = tune_gpu_tile('example', tree, parser, n_trial=80)
 print(new_tree.to_yaml())
+
+new_tree = tune_gpu_tile('example', tree, parser, tuner=autotvm.tuner.GATuner, n_trial=80)
+print(new_tree.to_yaml())
+
+
+# import logging, sys
+# logging.getLogger('autotvm').setLevel(logging.DEBUG)
+# logging.getLogger('autotvm').addHandler(logging.StreamHandler(sys.stdout))
+# 
+# new_tree = tune_gpu_tile('example', tree, parser, tuner=autotvm.tuner.RandomTuner)
+# print(new_tree.to_yaml())

@@ -5,7 +5,8 @@ import tvm
 from tvm import tir, te
 import isl
 
-from pyvlova.polyhedral.statement import IterVarTable, CUDAIterVarTable, TensorTable, Statement, Tensor
+from ..polyhedral.statement import IterVarTable, CUDAIterVarTable, TensorTable, Statement, Tensor
+from ..polyhedral.schedule_tree import ScheduleTree
 from ..polyhedral.tir_utils import tir_imm
 
 
@@ -26,6 +27,8 @@ class ISLNodeParser(Parser):
                 self.ast_build = getattr(self.ast_build, attr)(getattr(self, name))
 
     def parse(self, node, parent=None):
+        if isinstance(node, ScheduleTree):
+            node = node.to_isl()
         if isinstance(node, isl.schedule):
             node = self.ast_build.node_from(node)
         assert type(node).__name__.startswith('ast_node_')
@@ -242,8 +245,6 @@ class CUDANode2TIRParser(ISLNode2TIR):
 
 
 def build_tvm_stmts(name, tree, parser: ISLNode2TIR):
-    if isinstance(tree, ScheduleTree):
-        tree = tree.to_isl()
     stmts = parser.parse(tree)
     stmts = tir.ir_pass.CanonicalSimplify(stmts)
 
@@ -277,10 +278,11 @@ parser = CUDANode2TIRParser(
     stmt_table=example_statements
 )
 
+
 '''
 tree = example_tree.copy()
 tree.apply_params(n=N, m=M, q=Q)
-tree.gpu_tile([7, 7])
+tree.gpu_tile([1, 355])
 
 print(tree.to_yaml())
 
@@ -306,6 +308,6 @@ func(a, b, c)
 
 tvm.testing.assert_allclose(c_np, c.asnumpy(), rtol=1e-5)
 
-evaluator = func.time_evaluator(func.entry_name, ctx, number=10)
+evaluator = func.time_evaluator(func.entry_name, ctx, number=20)
 print('polyhedral speed:', evaluator(a, b, c).mean, end='\n\n')
 '''
