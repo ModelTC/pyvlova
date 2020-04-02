@@ -10,7 +10,7 @@ from ..codegen.isl_to_tir import build_tvm_stmts, CUDANode2TIRParser
 from ..polyhedral.schedule_tree import ScheduleTree
 
 
-GPU_MAX_THREADS = 512
+GPU_MAX_THREADS = 1024
 
 
 class GPUTileConfigEntity(list):

@@ -6,6 +6,7 @@ from tvm import tir, te
 import isl
 
 from pyvlova.polyhedral.statement import IterVarTable, CUDAIterVarTable, TensorTable, Statement, Tensor
+from ..polyhedral.tir_utils import tir_imm
 
 
 class Parser(object):
@@ -207,6 +208,14 @@ class CUDANode2TIRParser(ISLNode2TIR):
 
     def parse_mark(self, node, parent):
         body = super().parse_mark(node, parent)
+
+        mark = node.id().name()
+
+        if mark.startswith('bind=') and not isinstance(node.node(), isl.ast_node_for):
+            _, axis = mark.rsplit('=', 1)
+            with self.cuda_iter_var_table.var(axis) as iter_var:
+                body = tir.AttrStmt(node=iter_var, attr_key='thread_extent', value=tir_imm(1), body=body)
+
         # TODO: build local / shared memory realize node
         # name = node.id().name()
         # if name in self.tensor_table:
