@@ -16,4 +16,4 @@ def load_best(file_name, task):
                 mean_cost = float(numpy.mean(costs))
                 if best_cost is None or best_cost > mean_cost:
                     best, best_cost = row['config'], mean_cost
-    return best
+    return best, best_cost

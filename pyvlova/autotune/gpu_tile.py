@@ -208,8 +208,10 @@ def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
         ]
     )
 
-    best = load_best(tmp_file_name, task)
+    best, best_cost = load_best(tmp_file_name, task)
     best = GPUTileConfigEntity.from_json_dict(best)
+
+    print('GPUTile %s: best cost %.12f' % (name, best_cost))
 
     tree = tree.copy()
     tree.gpu_tile(best)
