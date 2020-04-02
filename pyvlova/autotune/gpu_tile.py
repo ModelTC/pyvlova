@@ -183,7 +183,7 @@ from ..codegen.isl_to_tir import parser, example_tree
 from .builder import PolyLocalBuilder
 
 tree = example_tree.copy()
-tree.apply_params(n=1024, m=1024, q=2048)
+tree.apply_params(n=512, m=512, q=1024)
 
 
 def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
