@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from functools import reduce
-from typing import Dict, List, Any, Type, Mapping, Optional, Iterable, Callable, Tuple
+from typing import Dict, List, Any, Type, Mapping, Optional, Iterable, Callable
+
 import copy
 import yaml
 import isl
-from .utils import get_unnamed_tuples
+
+from ..utils import get_unnamed_tuples
 
 
 def to_isl_style_yaml(d, indent=''):
@@ -201,6 +203,8 @@ class Node(object):
     def apply_params(self, *args, **kwargs):
         if args:
             kwargs = args[0]
+        for v in kwargs.values():
+            assert str(v).isdigit() or str(v).isidentifier()
         c = ' and '.join((f'{k} = ({v})' for k, v in kwargs.items()))
         k = ', '.join(kwargs.keys())
         s = isl.set('[%s] -> {: %s}' % (k, c))
@@ -234,7 +238,7 @@ class NodeWithSingleChild(Node):
         if 'child' in kwargs:
             assert not kwargs['children']
             kwargs['children'] = [kwargs.pop('child')]
-        super(NodeWithSingleChild, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
     @property
     def child(self):
@@ -259,7 +263,7 @@ class MarkNode(NodeWithSingleChild):
     fields: List[str] = ['mark']
 
     def __init__(self, mark=None, **kwargs):
-        super(MarkNode, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         if mark is None:
             mark = ''
         self.mark: str = str(mark)
@@ -269,7 +273,7 @@ class DomainNode(NodeWithSingleChild):
     fields: List[str] = ['domain']
 
     def __init__(self, domain=None, **kwargs):
-        super(DomainNode, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         if domain is None or isinstance(domain, str):
             domain = isl.union_set(domain or '{}')
         self.domain: isl.union_set = domain
@@ -283,7 +287,7 @@ class FilterNode(NodeWithSingleChild):
             filter_ = kwargs.pop('filter')
         else:
             filter_ = None
-        super(FilterNode, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         if filter_ is None or isinstance(filter_, str):
             filter_ = isl.union_set(filter_ or '{}')
         self.filter: isl.union_set = filter_
@@ -293,7 +297,7 @@ class ExtensionNode(NodeWithSingleChild):
     fields: List[str] = ['extension']
 
     def __init__(self, extension=None, **kwargs):
-        super(ExtensionNode, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         if extension is None or isinstance(extension, str):
             extension = isl.union_map(extension or '{}')
         self.extension: isl.union_map = extension
@@ -303,7 +307,7 @@ class ContextNode(NodeWithSingleChild):
     fields: List[str] = ['context']
 
     def __init__(self, context=None, **kwargs):
-        super(ContextNode, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         if context is None or isinstance(context, str):
             context = isl.set(context or '{ : }')
         elif isinstance(context, isl.union_set):
@@ -319,7 +323,7 @@ class GuardNode(NodeWithSingleChild):
     fields: List[str] = ['guard']
 
     def __init__(self, guard=None, **kwargs):
-        super(GuardNode, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         if guard is None or isinstance(guard, str):
             guard = isl.set(guard or '{ : }')
         elif isinstance(guard, isl.union_set):
@@ -335,7 +339,7 @@ class ExpansionNode(NodeWithSingleChild):
     fields: List[str] = ['expansion', 'contraction']
 
     def __init__(self, expansion=None, contraction=None, **kwargs):
-        super(ExpansionNode, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         if expansion is None or isinstance(expansion, str):
             expansion = isl.union_map(expansion or '{}')
         if contraction is None or isinstance(contraction, str):
@@ -348,7 +352,7 @@ class BandNode(NodeWithSingleChild):
     fields: List[str] = ['schedule', 'coincident', 'permutable']
 
     def __init__(self, schedule=None, coincident=None, permutable=None, **kwargs):
-        super(BandNode, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         if schedule is None or isinstance(schedule, str):
             schedule = isl.multi_union_pw_aff(schedule or '[]')
         if coincident is None:
@@ -362,7 +366,7 @@ class BandNode(NodeWithSingleChild):
     def call_on_fields(self, func_name, *args, **kwargs):
         if func_name == 'intersect_params':
             return
-        return super(BandNode, self).call_on_fields(func_name, *args, **kwargs)
+        return super().call_on_fields(func_name, *args, **kwargs)
 
     def normalize(self) -> BandNode:
         if len(self.coincident) < self.schedule.size():
@@ -380,6 +384,11 @@ class BandNode(NodeWithSingleChild):
         res['permutable'] = int(bool(node.permutable))
         if self.child:
             res[self.child_repr] = self._children_to_vanilla()
+        return res
+
+    def to_isl(self) -> isl.schedule_node_band:
+        res = super().to_isl()
+        assert isinstance(res, isl.schedule_node_band)
         return res
 
     def tile(self, *tile_size):
@@ -497,9 +506,9 @@ class ScheduleTree(object):
         thread_fake_args = ['i%d' % i for i in range(n)]
         thread_fake_constraints = [
             f'({i} mod {stride}) = {lower % stride} '
-                + f'and 0 <= {i} - {lower} < {size * stride}'
+            + f'and 0 <= {i} - {lower} < {size * stride}'
             for i, lower, stride, size in
-                zip(thread_fake_args, lowers, strides, thread_fake_sizes)
+            zip(thread_fake_args, lowers, strides, thread_fake_sizes)
         ]
         thread_fake_named_tuple = f'_thread[{", ".join(thread_fake_args)}]'
         thread_fake_statement = isl.union_set(
@@ -518,7 +527,8 @@ class ScheduleTree(object):
         band = self.outermost_band()
 
         for i in range(n):
-            s = band.schedule.at(i).union_add(isl.pw_aff(f'{{ {thread_fake_named_tuple} -> [({thread_fake_args[i]})] }}'))
+            s = band.schedule.at(i).union_add(
+                isl.pw_aff(f'{{ {thread_fake_named_tuple} -> [({thread_fake_args[i]})] }}'))
             band.schedule = band.schedule.set_at(i, s.coalesce())
 
         thread_fake_branch = SequenceNode()

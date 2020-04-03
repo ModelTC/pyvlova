@@ -1,33 +1,20 @@
 from __future__ import annotations
+
 from collections import defaultdict, namedtuple
 from contextlib import contextmanager
+from types import FunctionType
 from typing import Dict, List, Optional, Tuple, Set
 
 import sympy
 import tvm
 import isl
 from tvm import te, tir
-from .tir_utils import tir_load, tir_store, tir_imm
+
+from ..utils import Mode, tir_load, tir_store, tir_imm
 from ..codegen.sympy2isl import parse_sympy_to_isl_repr
 
 
-class _TraceMode(object):
-    def __init__(self, default_mode=None):
-        self.default_mode = default_mode
-        self.mode = None
-
-    @contextmanager
-    def under(self, mode=None):
-        old_mode = self.mode
-        if mode is None:
-            mode = self.default_mode
-        self.mode = mode
-        assert mode
-        yield
-        self.mode = old_mode
-
-
-trace_mode = _TraceMode()
+trace_mode = Mode()
 
 
 class _EffectiveOpRecorder(object):
@@ -99,6 +86,7 @@ class Tensor(object):
     def build_tir_realize(self, scope: str, body=None):
         def realize(b):
             tensor = self.te_tensor
+            # noinspection PyTypeChecker
             return tir.AttrStmt(
                 node=tensor.op, attr_key='realize_scope', value=tir_imm(scope),
                 body=tir.Realize(
@@ -138,6 +126,7 @@ class Tensor(object):
             value = tir_imm(value)
         record_effective_op(tir_store(self.te_tensor, key, value))
 
+    # noinspection PyUnusedLocal
     def setitem_tensor_access(self, key, value):
         key = list(key)
         assert len(key) == len(self.shape)
@@ -260,11 +249,16 @@ class CUDAIterVarTable(IterVarTable):
 
 
 class Statement(object):
-    def __init__(self, name, dim, calc):
+    @classmethod
+    def from_calc(cls, func: FunctionType) -> Statement:
+        return cls(func.__name__, func.__code__.co_argcount - 1, func)
+
+    def __init__(self, name, dim, calc, tensor_table=None):
         self.name = name
         self.dim = dim
         self.calc = calc
         self.access = None
+        self.tensor_table = tensor_table
 
     def to_stmt(self, tensor_table, *args):
         assert len(args) == self.dim
@@ -277,17 +271,20 @@ class Statement(object):
                 return self.to_stmt(tensor_table, *args)
 
     def get_access(self, tensor_table=None):
+        if tensor_table is None:
+            tensor_table = self.tensor_table
         if self.access is None:
             assert tensor_table is not None
             with trace_mode.under('tensor_access'):
                 with record_effective_op.recording():
-                    vars = [sympy.var('i%d' % i) for i in range(self.dim)]
-                    isl_repr = f'{self.name}[{", ".join(map(str, vars))}]'
-                    self.calc(tensor_table, *vars)
+                    args = [sympy.var('i%d' % i) for i in range(self.dim)]
+                    isl_repr = f'{self.name}[{", ".join(map(str, args))}]'
+                    self.calc(tensor_table, *args)
                     self.access = record_effective_op.get_tensor_access(isl_repr)
         return self.access
 
 
+'''
 N, M, Q = 512, 512, 1024
 example_tensor_table = TensorTable()
 example_tensor_table.add_tensor('A', [N, Q])
@@ -315,7 +312,6 @@ example_statements = _example_statements()
 for statement in example_statements.values():
     statement.get_access(example_tensor_table)
 
-'''
 for i in example_statements.values():
     j = i.to_tvm(example_tensor_table, *_tmp_vars[:i.dim])
     print(type(j), j)

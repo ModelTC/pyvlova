@@ -1,4 +1,3 @@
-import functools
 import numpy as np
 import sympy
 from ..trace import current_status
@@ -41,8 +40,8 @@ class KthItem(Dumpable):
 
 
 class DummyTensor(Dumpable):
-    def __init__(self, symbol, shape=None, dtype=np.float32, _wrapped=False):
-        self._wrapped = _wrapped
+    def __init__(self, symbol, shape=None, dtype=np.float32, wrapped=False):
+        self.wrapped = wrapped
         self.symbol = symbol
         self.shape = shape or []
         self.dtype = dtype
@@ -60,7 +59,7 @@ class DummyTensor(Dumpable):
             return self[k]
         if len(self.shape) == 1:
             return sympy.Symbol(KthItem(self, key).to_loopy())
-        return DummyTensor(KthItem(self, key), self.shape[1:], self.dtype, _wrapped=True)
+        return DummyTensor(KthItem(self, key), self.shape[1:], self.dtype, wrapped=True)
 
     def __setitem__(self, key, value):
         left = self[key]

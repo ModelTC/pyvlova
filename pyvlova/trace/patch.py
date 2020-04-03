@@ -40,16 +40,13 @@ def monkey_patch():
             fallback = replace_item(obj.__dict__, name, new_val)
             fallback_stack.append(fallback)
         else:
-            for func in TracableCalcFunc._instances.values():
-                fallback = replace_item(
-                    func.pretty_func.__globals__, name, new_val
-                )
-                fallback_stack.append(fallback)
+            for func in TracableCalcFunc.instances.values():
+                fb = replace_item(func.pretty_func.__globals__, name, new_val)
+                fallback_stack.append(fb)
 
     def recover():
         while fallback_stack:
-            fallback = fallback_stack.pop()
-            fallback()
+            fallback_stack.pop()()
         current_status.monkey_patched = False
 
     current_status.monkey_patched = recover
@@ -98,8 +95,7 @@ def my_range(left, right=None, step=None):
     if step == 1:
         constraint = sympy.And(left <= var, var < right)
     else:
-        constraint = sympy.And(left <= var, var < right,
-            sympy.Eq((var - left) % step, 0))
+        constraint = sympy.And(left <= var, var < right, sympy.Eq((var - left) % step, 0))
 
     current_status.push_constraint(constraint)
     yield var

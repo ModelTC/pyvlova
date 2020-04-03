@@ -1,21 +1,22 @@
 import os
 from functools import reduce
+from typing import Tuple
 
 import tvm
 import numpy
 from tvm import autotvm
 
-from .utils import load_best
+from .builder import PolyLocalBuilder
 from ..codegen.isl_to_tir import build_tvm_stmts, CUDANode2TIRParser
-from ..polyhedral.schedule_tree import ScheduleTree
-
+from ..poly.schedule_tree import ScheduleTree
+from ..utils import load_best
 
 GPU_MAX_THREADS = 1024
 
 
 class GPUTileConfigEntity(list):
     def __init__(self, index, total, *args, **kwargs):
-        super(GPUTileConfigEntity, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.index = index
         self.total = total
 
@@ -33,23 +34,23 @@ class GPUTileConfigEntity(list):
     def get_flatten_feature(self):
         return numpy.array([self.index / self.total], dtype=numpy.float32)
 
+    # noinspection PyMethodMayBeStatic
     def get_other_option(self):
         return {}
 
 
 class GPUTileConfigSpace(object):
     def __init__(self, n, b):
-        super().__init__()
         self.n = n
         self.b = list(b) + [n]
         self.dim = len(self.b) - 1
 
         self.a = []
-        self.l = []
+        self.al = []
         cur = 1
         while cur <= n:
             self.a.append(cur)
-            self.l.append(n // cur - n // (cur + 1))
+            self.al.append(n // cur - n // (cur + 1))
             if cur >= n:
                 break
             cur = n // (n // (cur + 1))
@@ -104,16 +105,16 @@ class GPUTileConfigSpace(object):
         c = x
         n = self.n
         for i in range(self.dim - 1, -1, -1):
-            l, r = 1, min(n, self.b[i]) + 1
-            while r - l > 1:
-                mid = (l + r) // 2
+            left, right = 1, min(n, self.b[i]) + 1
+            while right - left > 1:
+                mid = (left + right) // 2
                 if self.g(i, n, mid - 1) <= c:
-                    l = mid
+                    left = mid
                 else:
-                    r = mid
-            res[i] = l
-            c -= self.g(i, n, l - 1)
-            n //= l
+                    right = mid
+            res[i] = left
+            c -= self.g(i, n, left - 1)
+            n //= left
         return res
 
     def g(self, k, n, x):
@@ -136,10 +137,10 @@ class GPUTileConfigSpace(object):
         bd = self.b[k]
         res, cur = 0, 1
         while cur <= n:
-            r = min(n // cur, bd)
-            l = n // (cur + 1)
-            if r - l >= 1:
-                res += (r - l) * self.f(k - 1, cur)
+            right = min(n // cur, bd)
+            left = n // (cur + 1)
+            if right - left >= 1:
+                res += (right - left) * self.f(k - 1, cur)
             if cur >= n:
                 break
             cur = n // (n // (cur + 1))
@@ -163,7 +164,7 @@ class GPUTileConfigSpace(object):
 
 class GPUTileTask(autotvm.task.Task):
     def __init__(self, name, tree: ScheduleTree, parser):
-        super(GPUTileTask, self).__init__(name, [])
+        super().__init__(name, [])
         self.tree = tree
         self.parser = parser
         _, band_size, *_ = tree.parallel_tilable()
@@ -179,15 +180,10 @@ class GPUTileTask(autotvm.task.Task):
         return build_tvm_stmts(self.name, tree, self.parser)
 
 
-from ..codegen.isl_to_tir import parser, example_tree
-from .builder import PolyLocalBuilder
-
-tree = example_tree.copy()
-tree.apply_params(n=512, m=512, q=1024)
-
-
 def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
-         n_trial=40, builder=None, runner=None, tuner=None, callbacks=None) -> ScheduleTree:
+                  n_trial=40, builder=None, runner=None, tuner=None,
+                  callbacks=None) -> Tuple[GPUTileConfigEntity, float]:
+    assert name.isidentifier()
     task = GPUTileTask(name, tree.copy(), parser)
 
     measure_option = {
@@ -217,15 +213,24 @@ def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
 
     print('GPUTile %s: best %s, best cost %.12f' % (name, repr(best), best_cost))
 
-    tree = tree.copy()
-    tree.gpu_tile(best)
-
     try:
         os.remove(tmp_file_name)
     except Exception as e:
         print(e)
 
-    return tree
+    return best, best_cost
+
+
+'''
+import os
+from ..codegen.isl_to_tir import parser, example_tree, CUDANode2TIRParser
+from .builder import PolyLocalBuilder
+from .utils import load_best
+
+tree = example_tree.copy()
+tree.apply_params(n=512, m=512, q=1024)
+
+
 
 
 new_tree = tune_gpu_tile('example', tree, parser, n_trial=80)
@@ -235,9 +240,10 @@ new_tree = tune_gpu_tile('example', tree, parser, tuner=autotvm.tuner.GATuner, n
 print(new_tree.to_yaml())
 
 
-# import logging, sys
-# logging.getLogger('autotvm').setLevel(logging.DEBUG)
-# logging.getLogger('autotvm').addHandler(logging.StreamHandler(sys.stdout))
+import logging, sys
+logging.getLogger('autotvm').setLevel(logging.DEBUG)
+logging.getLogger('autotvm').addHandler(logging.StreamHandler(sys.stdout))
 # 
 # new_tree = tune_gpu_tile('example', tree, parser, tuner=autotvm.tuner.RandomTuner)
 # print(new_tree.to_yaml())
+'''

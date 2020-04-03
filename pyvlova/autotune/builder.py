@@ -10,21 +10,16 @@ from tvm.target import build_config
 
 
 def _poly_build_func_common(measure_input, check_gpu=None, cuda_arch=None, build_option=None):
-    """Common part for building a configuration"""
     target, task, config = measure_input
     with target:
         lowered_func, tensors = task.instantiate(config)
-
-        # check invalidity of template and code hash consistency
         if not config.valid:
             raise InstantiationError(config.errors)
-
         opts = build_option or {}
-        if check_gpu:  # Add verify pass to filter out invalid configs in advance.
+        if check_gpu:
             opts["add_lower_pass"] = [(2, gpu_verify_pass(**check_gpu))]
         if cuda_arch:
             set_cuda_target_arch(cuda_arch)
-
         with build_config(**opts):
             func = tvm.build(lowered_func)
     return func, [(i.shape, i.dtype) for i in tensors]
@@ -36,25 +31,13 @@ def _poly_wrap_build_func(build_func):
     output_format = build_func.output_format
 
     def _wrapped(measure_input, tmp_dir, **kwargs):
-        """
-        Wrapped build func.
-
-        Parameters
-        ----------
-        measure_input: MeasureInput
-            The input of measurement
-
-        tmp_dir: str
-            The path of temporary directory to export generated library
-        """
         tic = time.time()
         try:
             filename = os.path.join(tmp_dir, "tmp_func_%0x.%s" % (
                 getrandbits(64), output_format))
-            # TODO(tvm-team) consider linline _build_func_common
             func, arg_info = _poly_build_func_common(measure_input, **kwargs)
             func.export_library(filename, build_func)
-        except Exception as e:  # pylint: disable=broad-except
+        except Exception as e:
             return BuildResult(None, None, e, time.time() - tic)
         return BuildResult(filename, arg_info, None, time.time() - tic)
     return _wrapped
@@ -62,7 +45,7 @@ def _poly_wrap_build_func(build_func):
 
 class PolyLocalBuilder(LocalBuilder):
     def __init__(self, build_func='default', **kwargs):
-        super(PolyLocalBuilder, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         if isinstance(build_func, str):
             if build_func == 'default':
                 build_func = tar.tar

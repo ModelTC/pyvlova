@@ -9,9 +9,9 @@ from ..codegen import sympy2isl
 def wrap_sys_trace():
     old_sys_trace = sys.gettrace() or (lambda *_, **__: None)
 
-    def sys_trace(*args, **kwargs):
+    def sys_trace(frame, arg):
         # TODO: monitor if statements and calls
-        return old_sys_trace(*args, **kwargs)
+        return old_sys_trace(frame, arg)
 
     sys.settrace(sys_trace)
     return old_sys_trace
@@ -41,8 +41,7 @@ class CurrentStatus(object):
         print(domain)
         print(statement)
         kernel = lp.make_kernel(domain, statement)
-        kernel = lp.add_dtypes(kernel,
-            {k: v[-1].dtype for k, v in self.known_tensors_s.items()})
+        kernel = lp.add_dtypes(kernel, {k: v[-1].dtype for k, v in self.known_tensors_s.items()})
 
         self.loopy_kernels.append(kernel)
         self.statements = []

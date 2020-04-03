@@ -1,13 +1,14 @@
 import threading
 from contextlib import contextmanager
 from typing import Dict, Iterable
+
 import tvm
 from tvm import tir, te
 import isl
 
-from ..polyhedral.statement import IterVarTable, CUDAIterVarTable, TensorTable, Statement, Tensor
-from ..polyhedral.schedule_tree import ScheduleTree
-from ..polyhedral.tir_utils import tir_imm
+from ..poly.poly import IterVarTable, CUDAIterVarTable, TensorTable, Statement, Tensor
+from ..poly.schedule_tree import ScheduleTree
+from ..utils import tir_imm
 
 
 class Parser(object):
@@ -44,6 +45,7 @@ class ISLExprParser(Parser):
         return getattr(self, f'parse_{t}')(node, parent)
 
 
+# noinspection PyMethodMayBeStatic, PyUnusedLocal
 class ISLExpr2TIR(ISLExprParser):
     def __init__(self, iter_var_table):
         super().__init__()
@@ -98,6 +100,7 @@ class ISLExpr2TIR(ISLExprParser):
         return tir.Max(self.parse(expr.arg(0), expr), self.parse(expr.arg(1), expr))
 
 
+# noinspection PyUnusedLocal
 class ISLNode2TIR(ISLNodeParser):
     def __init__(self, tensor_table=None, stmt_table=None, iter_var_table=None, expr_parser=None, **kwargs):
         super().__init__(**kwargs)
@@ -186,7 +189,8 @@ class CUDANode2TIRParser(ISLNode2TIR):
         super().__init__(**kwargs)
         self.cuda_iter_var_table = cuda_iter_var_table or CUDAIterVarTable()
 
-    def _produce_tensors(self, scope, tensors: Iterable[Tensor], body):
+    @staticmethod
+    def _produce_tensors(scope, tensors: Iterable[Tensor], body):
         for t in reversed(list(tensors)):
             body = t.build_tir_realize(scope, body)
         return body
@@ -196,7 +200,7 @@ class CUDANode2TIRParser(ISLNode2TIR):
             body = super().parse(node, parent)
             write_tensors = set()
             for i in self.stmt_table.values():
-                 write_tensors = write_tensors.union(i.get_access()[1]['write'])
+                write_tensors = write_tensors.union(i.get_access()[1]['write'])
             return self._produce_tensors('', write_tensors, body)
         return super().parse(node, parent)
 
@@ -244,42 +248,45 @@ class CUDANode2TIRParser(ISLNode2TIR):
         return super().parse_for(node, parent)
 
 
-def build_tvm_stmts(name, tree, parser: ISLNode2TIR):
-    stmts = parser.parse(tree)
-    stmts = tir.ir_pass.CanonicalSimplify(stmts)
-
-    tensor_table = parser.tensor_table
-    tensors = [i.te_tensor for i in tensor_table.table.values()]
-    binds, arg_list = tvm.driver.build_module.get_binds(tensors)
-
+@contextmanager
+def building_poly(stmts, binds, arg_list):
     with threading.Lock():
         old_form_body = tvm.driver.build_module.form_body
         old_get_binds = tvm.driver.build_module.get_binds
-        try:
-            tvm.driver.build_module.form_body = lambda x: stmts
-            tvm.driver.build_module.get_binds = lambda *_, **__: (binds, arg_list)
-
-            tvm_s = te.create_schedule(tensors[-1].op)
-            stmts = tvm.lower(tvm_s, tensors, name=name)
-        except:
-            raise
-        finally:
-            tvm.driver.build_module.get_binds = old_get_binds
-            tvm.driver.build_module.form_body = old_form_body
-
-    return stmts, tensors
+        tvm.driver.build_module.form_body = lambda x: stmts
+        tvm.driver.build_module.get_binds = lambda *_, **__: (binds, arg_list)
+        yield
+        tvm.driver.build_module.get_binds = old_get_binds
+        tvm.driver.build_module.form_body = old_form_body
 
 
-from ..polyhedral.statement import example_tensor_table, example_statements, N, M, Q
-from ..polyhedral.schedule_tree import example_tree, ScheduleTree
+# noinspection PyUnresolvedReferences
+def build_tvm_stmts(name, tree, parser: ISLNode2TIR, te_tensors=None):
+    stmts = parser.parse(tree)
+    stmts = tir.ir_pass.CanonicalSimplify(stmts)
+
+    if te_tensors is None:
+        tensor_table = parser.tensor_table
+        te_tensors = [i.te_tensor for i in tensor_table.table.values()]
+
+    binds, arg_list = tvm.driver.build_module.get_binds(te_tensors)
+
+    with building_poly(stmts, binds, arg_list):
+        tvm_s = te.create_schedule(te_tensors[-1].op)
+        stmts = tvm.lower(tvm_s, te_tensors, name=name)
+
+    return stmts, te_tensors
+
+
+'''
+from ..polyhedral.statement import example_tensor_table, example_statements
+from ..polyhedral.schedule_tree import ScheduleTree
 
 parser = CUDANode2TIRParser(
     tensor_table=example_tensor_table,
     stmt_table=example_statements
 )
 
-
-'''
 tree = example_tree.copy()
 tree.apply_params(n=N, m=M, q=Q)
 tree.gpu_tile([1, 355])
@@ -309,5 +316,5 @@ func(a, b, c)
 tvm.testing.assert_allclose(c_np, c.asnumpy(), rtol=1e-5)
 
 evaluator = func.time_evaluator(func.entry_name, ctx, number=20)
-print('polyhedral speed:', evaluator(a, b, c).mean, end='\n\n')
+print('poly speed:', evaluator(a, b, c).mean, end='\n\n')
 '''

@@ -1,19 +1,18 @@
 import inspect
-import astor
 
 from .trace import current_status
 from ..tensor.dummy_tensor import DummyTensor
 
 
 class TracableFuncMeta(type):
-    _instances = dict()
+    instances = dict()
 
     def __call__(cls, func):
         key = id(func)
-        if key in cls._instances:
-            return cls._instances[key]
-        cls._instances[key] = super().__call__(func)
-        return cls._instances[key]
+        if key in cls.instances:
+            return cls.instances[key]
+        cls.instances[key] = super().__call__(func)
+        return cls.instances[key]
 
 
 class TracableCalcFunc(metaclass=TracableFuncMeta):
@@ -32,11 +31,11 @@ class TracableCalcFunc(metaclass=TracableFuncMeta):
         if current_status.tracing:
             print('Tracing', self.pretty_func.__name__)
             for arg in args:
-                if isinstance(arg, DummyTensor) and not arg._wrapped:
+                if isinstance(arg, DummyTensor) and not arg.wrapped:
                     current_status.push_tensor(arg)
             res = self.pretty_func(*args, **kwargs)
             for arg in args[::-1]:
-                if isinstance(arg, DummyTensor) and not arg._wrapped:
+                if isinstance(arg, DummyTensor) and not arg.wrapped:
                     current_status.pop_tensor()
             return res
         else:
