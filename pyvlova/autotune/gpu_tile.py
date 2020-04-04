@@ -186,11 +186,6 @@ def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
     assert name.isidentifier()
     task = GPUTileTask(name, tree.copy(), parser)
 
-    measure_option = {
-        'builder': builder or PolyLocalBuilder(),
-        'runner': runner or autotvm.LocalRunner(number=6, min_repeat_ms=100, timeout=20),
-    }
-
     tmp_file_name = f'{name}.gpu_tile.log'
 
     if tuner is None:
@@ -200,7 +195,10 @@ def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
 
     tuner.tune(
         n_trial=n_trial,
-        measure_option=measure_option,
+        measure_option={
+            'builder': builder or PolyLocalBuilder(),
+            'runner': runner or autotvm.LocalRunner(number=6, min_repeat_ms=100, timeout=20),
+        },
         callbacks=[
             autotvm.callback.progress_bar(n_trial, prefix=f'GPUTile {name}'),
             autotvm.callback.log_to_file(tmp_file_name),

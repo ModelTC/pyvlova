@@ -154,6 +154,9 @@ class TensorTable(object):
     def del_tensor(self, name):
         del self[name]
 
+    def __iter__(self):
+        return iter(self.table.values())
+
     def __getitem__(self, key):
         if key in self.scoped_stack:
             return self.scoped_stack[key][-1].tensor
