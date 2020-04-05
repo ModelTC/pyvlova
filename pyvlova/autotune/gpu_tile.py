@@ -1,4 +1,3 @@
-import os
 from functools import reduce
 from typing import Tuple
 
@@ -9,7 +8,8 @@ from tvm import autotvm
 from .builder import PolyLocalBuilder
 from ..codegen.isl_to_tir import build_tvm_stmts, CUDANode2TIRParser
 from ..poly.schedule_tree import ScheduleTree
-from ..utils import load_best
+from ..utils import load_best, slugify
+
 
 GPU_MAX_THREADS = 1024
 
@@ -32,7 +32,7 @@ class GPUTileConfigEntity(list):
         return GPUTileConfigEntity(int(d['index']), int(d['total']), list(map(int, d['tile'])))
 
     def get_flatten_feature(self):
-        return numpy.array([self.index / self.total], dtype=numpy.float32)
+        return numpy.array(list(self), dtype=numpy.float32)
 
     # noinspection PyMethodMayBeStatic
     def get_other_option(self):
@@ -183,10 +183,8 @@ class GPUTileTask(autotvm.task.Task):
 def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
                   n_trial=40, builder=None, runner=None, tuner=None,
                   callbacks=None) -> Tuple[GPUTileConfigEntity, float]:
-    assert name.isidentifier()
     task = GPUTileTask(name, tree.copy(), parser)
-
-    tmp_file_name = f'{name}.gpu_tile.log'
+    tmp_file_name = slugify(name) + '.gpu_tile.log'
 
     if tuner is None:
         tuner = autotvm.tuner.XGBTuner(task, feature_type='knob')
@@ -210,11 +208,6 @@ def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
     best = GPUTileConfigEntity.from_json_dict(best)
 
     print('GPUTile %s: best %s, best cost %.12f' % (name, repr(best), best_cost))
-
-    try:
-        os.remove(tmp_file_name)
-    except Exception as e:
-        print(e)
 
     return best, best_cost
 

@@ -8,7 +8,7 @@ import isl
 
 from ..poly.poly import IterVarTable, CUDAIterVarTable, TensorTable, Statement, Tensor
 from ..poly.schedule_tree import ScheduleTree
-from ..utils import tir_imm
+from ..utils import tir_imm, slugify
 
 
 class Parser(object):
@@ -71,6 +71,9 @@ class ISLExpr2TIR(ISLExprParser):
         return tir.Sub(self.parse(expr.arg(0), expr), self.parse(expr.arg(1), expr))
 
     parse_op_sub = parse_op_minus
+
+    def parse_op_eq(self, expr, parent):
+        return tir.EQ(self.parse(expr.arg(0), expr), self.parse(expr.arg(1), expr))
 
     def parse_op_le(self, expr, parent):
         return tir.LE(self.parse(expr.arg(0), expr), self.parse(expr.arg(1), expr))
@@ -273,7 +276,7 @@ def build_tvm_stmts(name, tree, parser: ISLNode2TIR, te_tensors=None):
 
     with building_poly(stmts, binds, arg_list):
         tvm_s = te.create_schedule(te_tensors[-1].op)
-        stmts = tvm.lower(tvm_s, te_tensors, name=name)
+        stmts = tvm.lower(tvm_s, te_tensors, name=slugify(name))
 
     return stmts, te_tensors
 

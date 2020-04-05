@@ -1,3 +1,5 @@
+import topi
+
 from .base import ArgumentedOp
 from ..poly.poly import TensorTable, Statement
 from ..poly.schedule_tree import ScheduleTree
@@ -53,15 +55,15 @@ def statements(pad_top=0, pad_left=0, **_):
     return res
 
 
-class PlainPadding(ArgumentedOp):
-    required_params = [
+class Padding(ArgumentedOp):
+    required_args = [
         'channel', 'in_height', 'in_width',
         'pad_top', 'pad_bottom', 'pad_left', 'pad_right',
     ]
-    optional_params = {
+    optional_args = {
         'batch': 1,
     }
-    calculated_params = {
+    calculated_args = {
         'out_height': lambda **a: a['in_height'] + a['pad_top'] + a['pad_bottom'],
         'out_width': lambda **a: a['in_width'] + a['pad_left'] + a['pad_right'],
     }
@@ -71,3 +73,28 @@ class PlainPadding(ArgumentedOp):
     schedule_factory = schedule
     tensors_factory = tensors
     statements_factory = statements
+
+    def topi_cuda_args(self, x=None, weight=None, out=None):
+        return [x, [0, 0, self.pad_top, self.pad_left], [0, 0, self.pad_bottom, self.pad_right]]
+
+    topi_cuda_calc_func = topi.nn.pad
+    topi_cuda_schedule_func = topi.cuda.schedule_elemwise
+    topi_cuda_calc_ret_map = ['out']
+
+
+'''
+import tvm
+import numpy
+from .base import calc_mode
+ctx = tvm.gpu()
+x = tvm.nd.array(numpy.random.random((1, 64, 224, 224)).astype('float32'), ctx=ctx)
+padding = PlainPadding(channel=64, in_height=224, in_width=224,
+                       pad_top=1, pad_bottom=2, pad_left=3, pad_right=4)
+with calc_mode.under('tvm_cuda_timing'):
+    padding.imp(tune_kwargs={'n_trial': 1})
+    out_a = padding.calc(x)
+with calc_mode.under('tvm_topi_cuda_timing'):
+    padding.imp(tune_kwargs={'n_trial': 1})
+    out_b = padding.calc(x)
+tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy())
+'''

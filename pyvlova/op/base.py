@@ -1,29 +1,112 @@
 from itertools import chain
-from typing import Dict, Mapping, Iterable, Any, List, Callable
+from typing import Dict, Iterable, Any, List, Callable
 
+import numpy
 import tvm
 from tvm import autotvm
 
 from ..autotune.gpu_tile import tune_gpu_tile
 from ..codegen.isl_to_tir import CUDANode2TIRParser, ISLNode2TIR, build_tvm_stmts
-from ..poly.poly import TensorTable, Statement
+from ..poly.poly import TensorTable, Statement, Tensor
 from ..poly.schedule_tree import ScheduleTree
-from ..utils import Mode
+from ..utils import Mode, filter_contains, slugify
 
 calc_mode = Mode()
 
 
+class OpParameter(object):
+    def __init__(self, name):
+        self.name = name
+
+    @property
+    def hidden_attr(self):
+        return '__op_parameter_' + self.name
+
+    def mock_poly_tensor(self, instance, tensor: Tensor):
+        setattr(instance, self.hidden_attr, numpy.random.random(tensor.shape).astype(tensor.dtype))
+
+    def __get__(self, instance, owner):
+        value = getattr(instance, self.hidden_attr, None)
+        if 'tvm' in calc_mode.mode:
+            if 'cuda' in calc_mode.mode:
+                return tvm.nd.array(value, ctx=tvm.gpu())
+            return tvm.nd.array(value)
+        return value
+
+    def __set__(self, instance, value):
+        if not calc_mode.mode:
+            if isinstance(value, Tensor):
+                self.mock_poly_tensor(instance, value)
+            else:
+                setattr(instance, self.hidden_attr, value)
+            return
+        if 'tvm' in calc_mode.mode:
+            if isinstance(value, tvm.nd.NDArray):
+                value = value.asnumpy()
+        getattr(instance, self.hidden_attr)[:] = value
+
+
 class BaseOp(object):
+    def __init__(self, name: str = ''):
+        self._imp: Dict[str, Any] = dict()
+        self.name = name or f'{type(self).__name__}_{id(self)}'
+
+    def __getattr__(self, key):
+        raise AttributeError(f'no such attribute {key} for Op {type(self).__name__}')
+
+    def calc(self, *args, **kwargs):
+        raise NotImplemented
+
+    def imp(self, *args, **kwargs):
+        raise NotImplemented
+
+
+class CombinedOp(BaseOp):
+    def __init__(self, ops=None, name=''):
+        super().__init__(name=name)
+        self._ops = ops or []
+
+    def imp(self, *args, **kwargs):
+        return [op.imp(*args, **kwargs) for op in self._ops]
+
+
+class SequenceOp(CombinedOp):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self._ops:
+            op = self._ops[-1]
+            for i in ['batch', 'channel', 'height', 'width', 'feature']:
+                v = None
+                if hasattr(op, i):
+                    v = getattr(op, i)
+                elif hasattr(op, 'out_' + i):
+                    v = getattr(op, 'out_' + i)
+                if v is not None:
+                    setattr(self, 'out_' + i, v)
+
+    def calc(self, *args, **kwargs):
+        res = self._ops[0].calc(*args, **kwargs)
+        for op in self._ops[1:]:
+            if not isinstance(res, tuple):
+                res = (res,)
+            res = op.calc(*res)
+        return res
+
+
+class PolyOp(BaseOp):
     def __init__(self, schedule: ScheduleTree, tensors: TensorTable = None,
                  inputs: Iterable[str] = None, outputs: Iterable[str] = None,
-                 statements: Mapping[str, Statement] = None, name: str = ''):
+                 statements=None, name: str = ''):
+        super().__init__(name)
         self.schedule: ScheduleTree = schedule
         self.tensors: TensorTable = tensors or TensorTable()
         self.inputs: List[str] = list(inputs or list())
         self.outputs: List[str] = list(outputs or list())
-        self.statements: Dict[str, Statement] = dict(statements or dict())
-        self._imp: Dict[str, Any] = dict()
-        self.name = name or f'{type(self).__name__}_{id(self)}'
+        if statements is None:
+            statements = dict()
+        if isinstance(statements, List):
+            statements = {f.__name__: Statement.from_calc(f) for f in statements}
+        self.statements: Dict[str, Statement] = dict(statements)
         for s in self.statements.values():
             s.tensor_table = self.tensors
 
@@ -44,6 +127,8 @@ class BaseOp(object):
             raise Exception('no such implement, ' + str(calc_mode.mode))
         return getattr(self, imp_name)(*args, **kwargs)
 
+
+class PolyTVMOp(PolyOp):
     def _calc_on_tvm(self, *args, ctx=None, _imp_name=None, **kwargs):
         assert len(args) <= len(self.inputs)
         assert ctx and _imp_name
@@ -135,88 +220,108 @@ class BaseOp(object):
                             ctx = i.ctx
                             break
                     evaluator = func.time_evaluator(func.entry_name, ctx, number=timing_number)
-                    print(self.name, 'tvm timing', target, evaluator(*t_args, **t_kwargs).mean)
+                    t = evaluator(*t_args, **t_kwargs).mean
+                    print(self.name, 'tvm timing', target, '%.9f us' % (t * 1e6))
+                    timing.t = t
+
                 self._imp[f'tvm_{target}_timing'] = (timing, arg_map)
 
             setattr(self, key, _imp_tvm_timing)
             return _imp_tvm_timing
 
-        raise AttributeError
+        super().__getattr__(key)
+
+    topi_cuda_task_name: str = ''
+
+    def topi_cuda_args(self, **_):
+        return []
+
+    topi_cuda_calc_func: Callable = None
+    topi_cuda_schedule_func: Callable = None
+    topi_cuda_calc_ret_map: List[str] = []
+
+    def _tune_topi_cuda(self, name, args, te_tensors, tune_kwargs):
+        n_trial = tune_kwargs.get('n_trial', 40)
+        tmp_file_name = slugify(name) + '.topi_cuda.log'
+        task = autotvm.task.create(self.topi_cuda_task_name, args=args, target='cuda')
+        tuner = tune_kwargs.get('tuner', autotvm.tuner.XGBTuner(task))
+        tuner.tune(
+            n_trial=n_trial,
+            measure_option={
+                'builder': tune_kwargs.get('builder', autotvm.LocalBuilder()),
+                'runner': tune_kwargs.get(
+                    'runner', autotvm.LocalRunner(number=6, min_repeat_ms=100, timeout=20)),
+            },
+            callbacks=[
+                autotvm.callback.progress_bar(n_trial, prefix=f'TOPI {name}'),
+                autotvm.callback.log_to_file(tmp_file_name),
+                *tune_kwargs.get('callbacks', [])
+            ]
+        )
+        with autotvm.apply_history_best(tmp_file_name):
+            return self._build_topi_cuda(name, args, te_tensors)
+
+    def _build_topi_cuda(self, name, args, te_tensors):
+        res = type(self).topi_cuda_calc_func(*args)
+        if isinstance(res, tvm.te.Tensor):
+            res = (res,)
+        named_res = dict(zip(self.topi_cuda_calc_ret_map, res))
+        for i in range(len(te_tensors)):
+            if te_tensors[i].name in named_res:
+                te_tensors[i] = named_res[te_tensors[i].name]
+        s = type(self).topi_cuda_schedule_func(res)
+        func = tvm.build(s, te_tensors, name=slugify(name))
+        return func
+
+    def imp_tvm_topi_cuda(self, te_tensors=None, tune_kwargs=None):
+        if tune_kwargs is None:
+            tune_kwargs = {}
+        assert te_tensors
+        for i in te_tensors:
+            assert i.name in self.tensors
+        ts = {i.name: i for i in te_tensors}
+        name = self.name + '_tvm_topi_cuda'
+        with tvm.target.create('cuda'):
+            args = self.topi_cuda_args(**ts)
+            if self.topi_cuda_task_name:
+                func = self._tune_topi_cuda(name, args, te_tensors, tune_kwargs)
+            else:
+                func = self._build_topi_cuda(name, args, te_tensors)
+        arg_map = {v: i for i, v in enumerate(self.tensor_order)}
+        self._imp['tvm_topi_cuda'] = (func, arg_map)
+        return func
 
 
-class ArgumentedOp(BaseOp):
-    required_params: Iterable[str] = []
-    optional_params: Dict[str, Any] = {}
-    calculated_params: Dict[str, Callable] = {}
+class ArgumentedOp(PolyTVMOp):
+    required_args: Iterable[str] = []
+    optional_args: Dict[str, Any] = {}
+    calculated_args: Dict[str, Callable] = {}
     tensor_order: Iterable[str] = []
     inputs: List[str] = []
     outputs: List[str] = []
     schedule_factory: Callable = None
     tensors_factory: Callable = None
     statements_factory: Callable = None
-    topi_cuda_task_name: str = ''
-    topi_cuda_args: Callable = None
-    topi_cuda_calc_func: Callable = None
-    topi_cuda_schedule_func: Callable = None
-    topi_cuda_calc_ret_map: List[str] = []
 
-    def imp_tvm_topi_cuda(self, te_tensors=None, tune_kwargs=None):
-        assert self.topi_cuda_task_name
-        if tune_kwargs is None:
-            tune_kwargs = {}
-        if te_tensors is None:
-            te_tensors = [self.tensors[i].te_tensor for i in self.tensor_order]
-        for i in te_tensors:
-            assert i.name in self.tensors
-        ts = {i.name: i for i in te_tensors}
-        name = self.name + '_tvm_topi_cuda'
-        with tvm.target.create('cuda'):
-            args = type(self).topi_cuda_args(**ts)
-            task = autotvm.task.create(self.topi_cuda_task_name, args=args, target='cuda')
-            tmp_file_name = f'{name}.topi.log'
-            tuner = tune_kwargs.get('tuner', autotvm.tuner.XGBTuner(task))
-            n_trial = tune_kwargs.get('n_trial', 40)
-            tuner.tune(
-                n_trial=n_trial,
-                measure_option={
-                    'builder': tune_kwargs.get('builder', autotvm.LocalBuilder()),
-                    'runner': tune_kwargs.get(
-                        'runner', autotvm.LocalRunner(number=6, min_repeat_ms=100, timeout=20)),
-                },
-                callbacks=[
-                    autotvm.callback.progress_bar(n_trial, prefix=f'TOPI {name}'),
-                    autotvm.callback.log_to_file(tmp_file_name),
-                    *tune_kwargs.get('callbacks', [])
-                ]
-            )
-            with autotvm.apply_history_best(tmp_file_name):
-                with tvm.target.create('cuda'):
-                    res = type(self).topi_cuda_calc_func(*args)
-                    if isinstance(res, tvm.nd.NDArray):
-                        res = (res, )
-                    for t, name in zip(res, self.topi_cuda_calc_ret_map):
-                        te_tensors[ts[name]] = t
-                    s = type(self).topi_cuda_schedule_func(*args)
-                    func = tvm.build(s, te_tensors, name=name)
-        arg_map = {v.name: i for i, v in enumerate(te_tensors)}
-        self._imp['tvm_topi_cuda'] = (func, arg_map)
-        return func
+    @classmethod
+    def filter_args(cls, args):
+        return filter_contains(args, cls.required_args, cls.optional_args, cls.calculated_args)
 
     def __init__(self, **kwargs):
-        self.params = dict()
-        for i in self.required_params:
+        self.arguments = dict()
+        for i in self.required_args:
             assert i in kwargs, f'{i} not in {kwargs}'
             v = kwargs.pop(i)
             setattr(self, i, v)
-            self.params[i] = v
-        for i, d in self.optional_params.items():
+            self.arguments[i] = v
+        for i, d in self.optional_args.items():
             v = kwargs.pop(i, d)
             setattr(self, i, v)
-            self.params[i] = v
-        for k, f in self.calculated_params.items():
-            v = kwargs.pop(k, f(**kwargs, **self.params))
+            self.arguments[i] = v
+        for k, f in self.calculated_args.items():
+            v = kwargs.pop(k, f(**kwargs, **self.arguments))
             setattr(self, k, v)
-            self.params[k] = v
+            self.arguments[k] = v
         if 'tensor_order' in kwargs:
             self.tensor_order = kwargs.pop('tensor_order')
         for k in ('inputs', 'outputs'):
@@ -224,9 +329,9 @@ class ArgumentedOp(BaseOp):
                 kwargs[k] = getattr(type(self), k)
         assert set(kwargs.keys()).issubset({'inputs', 'outputs', 'name'})
         super().__init__(
-            schedule=type(self).schedule_factory(**self.params),
-            tensors=type(self).tensors_factory(**self.params),
-            statements=type(self).statements_factory(**self.params),
+            schedule=type(self).schedule_factory(**self.arguments),
+            tensors=type(self).tensors_factory(**self.arguments),
+            statements=type(self).statements_factory(**self.arguments),
             **kwargs
         )
 
@@ -239,3 +344,8 @@ class ArgumentedOp(BaseOp):
         if te_tensors is None:
             te_tensors = [self.tensors[i].te_tensor for i in self.tensor_order]
         return super().imp_tvm_cuda(te_tensors=te_tensors, **kwargs)
+
+    def imp_tvm_topi_cuda(self, te_tensors=None, **kwargs):
+        if te_tensors is None:
+            te_tensors = [self.tensors[i].te_tensor for i in self.tensor_order]
+        super().imp_tvm_topi_cuda(te_tensors=te_tensors, **kwargs)

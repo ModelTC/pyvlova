@@ -1,3 +1,4 @@
+import topi
 from tvm import te
 
 from .base import ArgumentedOp
@@ -35,21 +36,25 @@ def tensors(batch=1, channel=1, height=1, width=1, **_):
 
 
 class UnaryElementwise(ArgumentedOp):
-    required_params = [
+    required_args = [
         'channel', 'height', 'width',
     ]
-    optional_params = {
+    optional_args = {
         'batch': 1,
     }
-    calculated_params = {}
+    calculated_args = {}
     tensor_order = ['x', 'out']
     inputs = ['x']
     outputs = ['out']
     schedule_factory = schedule
     tensors_factory = tensors
+    topi_cuda_calc_ret_map = ['out']
+
+    def topi_cuda_args(self, x=None, out=None):
+        return [x]
 
 
-class PlainReLU(UnaryElementwise):
+class ReLU(UnaryElementwise):
     @staticmethod
     def statements_factory(**_):
         def stmt(t, n, c, h, w):
@@ -64,3 +69,23 @@ class PlainReLU(UnaryElementwise):
         for i in [stmt]:
             res[i.__name__] = Statement.from_calc(i)
         return res
+
+    topi_cuda_calc_func = topi.nn.relu
+    topi_cuda_schedule_func = topi.cuda.schedule_elemwise
+
+
+'''
+import tvm
+import numpy
+from .base import calc_mode
+ctx = tvm.gpu()
+x = tvm.nd.array(numpy.random.random((1, 64, 224, 224)).astype('float32'), ctx=ctx)
+elewise_add = PlainReLU(channel=64, height=224, width=224)
+with calc_mode.under('tvm_cuda_timing'):
+    elewise_add.imp(tune_kwargs={'n_trial': 1})
+    out_a = elewise_add.calc(x)
+with calc_mode.under('tvm_topi_cuda_timing'):
+    elewise_add.imp(tune_kwargs={'n_trial': 1})
+    out_b = elewise_add.calc(x)
+tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy())
+'''

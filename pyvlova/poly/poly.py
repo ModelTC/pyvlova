@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict, namedtuple
 from contextlib import contextmanager
 from types import FunctionType
-from typing import Dict, List, Optional, Tuple, Set
+from typing import Dict, List, Optional, Tuple, Set, Iterable
 
 import sympy
 import tvm
@@ -104,12 +104,10 @@ class Tensor(object):
         return realize(body)
 
     def getitem_tvm(self, key):
-        key = list(key)
         assert len(key) == len(self.shape)
         return tir_load(self.te_tensor, key)
 
     def getitem_tensor_access(self, key):
-        key = list(key)
         assert len(key) == len(self.shape)
         key = list(map(parse_sympy_to_isl_repr, key))
         record_effective_op(('read', self, key))
@@ -117,10 +115,13 @@ class Tensor(object):
 
     def __getitem__(self, key):
         assert trace_mode.mode
+        if not isinstance(key, Iterable):
+            key = [key]
+        else:
+            key = list(key)
         return getattr(self, 'getitem_' + trace_mode.mode)(key)
 
     def setitem_tvm(self, key, value):
-        key = list(key)
         assert len(key) == len(self.shape)
         if isinstance(value, (int, float, str, bool)):
             value = tir_imm(value)
@@ -128,12 +129,15 @@ class Tensor(object):
 
     # noinspection PyUnusedLocal
     def setitem_tensor_access(self, key, value):
-        key = list(key)
         assert len(key) == len(self.shape)
         key = list(map(parse_sympy_to_isl_repr, key))
         record_effective_op(('write', self, key))
 
     def __setitem__(self, key, value):
+        if not isinstance(key, Iterable):
+            key = [key]
+        else:
+            key = list(key)
         assert trace_mode.mode
         return getattr(self, 'setitem_' + trace_mode.mode)(key, value)
 
