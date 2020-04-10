@@ -6,7 +6,7 @@ import tvm
 from tvm import autotvm
 
 from pyvlova.autotune.gpu_tile import tune_gpu_tile
-from pyvlova.autotune.settings import default_runner
+from pyvlova.autotune.settings import default_eval_settings
 from pyvlova.codegen.isl_to_tir import CUDANode2TIRParser, ISLNode2TIR, build_tvm_stmts
 from pyvlova.poly.poly import TensorTable, Statement, Tensor
 from pyvlova.poly.schedule_tree.tree import ScheduleTree
@@ -220,7 +220,7 @@ class PolyTVMOp(PolyOp):
                         if isinstance(i, tvm.nd.NDArray):
                             ctx = i.ctx
                             break
-                    evaluator = func.time_evaluator(func.entry_name, ctx, number=timing_number)
+                    evaluator = func.time_evaluator(func.entry_name, ctx, **default_eval_settings)
                     t = evaluator(*t_args, **t_kwargs).mean
                     print(self.name, 'tvm timing', target, '%.9f us' % (t * 1e6))
                     timing.t = t
@@ -250,7 +250,7 @@ class PolyTVMOp(PolyOp):
             n_trial=n_trial,
             measure_option={
                 'builder': tune_kwargs.get('builder', autotvm.LocalBuilder()),
-                'runner': tune_kwargs.get('runner', default_runner),
+                'runner': tune_kwargs.get('runner', autotvm.LocalRunner(timeout=20, **default_eval_settings)),
             },
             callbacks=[
                 autotvm.callback.progress_bar(n_trial, prefix=f'TOPI {name}'),

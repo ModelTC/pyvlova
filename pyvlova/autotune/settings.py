@@ -1,3 +1,1 @@
-from tvm import autotvm
-
-default_runner = autotvm.LocalRunner(repeat=10, number=30, min_repeat_ms=100, timeout=20)
+default_eval_settings = {'repeat': 10, 'number': 30, 'min_repeat_ms': 10}
