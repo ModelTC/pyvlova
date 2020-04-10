@@ -6,6 +6,7 @@ import tvm
 from tvm import autotvm
 
 from pyvlova.autotune.gpu_tile import tune_gpu_tile
+from pyvlova.autotune.settings import default_runner
 from pyvlova.codegen.isl_to_tir import CUDANode2TIRParser, ISLNode2TIR, build_tvm_stmts
 from pyvlova.poly.poly import TensorTable, Statement, Tensor
 from pyvlova.poly.schedule_tree.tree import ScheduleTree
@@ -249,8 +250,7 @@ class PolyTVMOp(PolyOp):
             n_trial=n_trial,
             measure_option={
                 'builder': tune_kwargs.get('builder', autotvm.LocalBuilder()),
-                'runner': tune_kwargs.get(
-                    'runner', autotvm.LocalRunner(number=6, min_repeat_ms=100, timeout=20)),
+                'runner': tune_kwargs.get('runner', default_runner),
             },
             callbacks=[
                 autotvm.callback.progress_bar(n_trial, prefix=f'TOPI {name}'),
