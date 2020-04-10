@@ -1,11 +1,11 @@
 import topi
 from tvm import te
 
-from .base import ArgumentedOp, SequenceOp
-from .padding import Padding
-from ..poly.poly import TensorTable, Statement, trace_mode
-from ..poly.schedule_tree import ScheduleTree
-from ..utils import tir_imm
+from pyvlova.op.base import ArgumentedOp, SequenceOp
+from pyvlova.op.padding import Padding
+from pyvlova.poly.poly import TensorTable, Statement, trace_mode
+from pyvlova.poly.schedule_tree.tree import ScheduleTree
+from pyvlova.utils import tir_imm
 
 
 def schedule(**kwargs):
@@ -129,7 +129,7 @@ class Pool(SequenceOp):
         else:
             self.pad = None
         self.pool = PlainPool(
-            name=self.name + '.conv', batch=batch,
+            name=self.name + '.pool', batch=batch,
             channel=channel, in_height=in_height, in_width=in_width,
             kernel_height=kernel_height, kernel_width=kernel_width,
             stride_height=stride_height, stride_width=stride_width,
@@ -169,12 +169,14 @@ import tvm
 import numpy
 from .base import calc_mode
 ctx = tvm.gpu()
-x = tvm.nd.array(numpy.random.random((1, 64, 224, 224)).astype('float32'), ctx=ctx)
-maxpool = PlainPool(channel=64, in_height=224, in_width=224,
-                        kernel_height=7, kernel_width=7, stride_height=2, stride_width=2, pool_type='max')
+x = tvm.nd.array(numpy.random.random((20, 64, 224, 224)).astype('float32'), ctx=ctx)
+maxpool = PlainPool(batch=20, channel=64, in_height=224, in_width=224,
+                    kernel_height=7, kernel_width=7, stride_height=2, stride_width=2, pool_type='max')
 with calc_mode.under('tvm_cuda_timing'):
-    maxpool.imp(tune_kwargs={'n_trial': 1})
+    maxpool.imp(tune_kwargs={'n_trial': 30})
+    # maxpool.imp(tile_size=[4, 16, 109, 109])
     out_a = maxpool.calc(x)
+a = maxpool._imp['tvm_cuda'][0]
 with calc_mode.under('tvm_topi_cuda_timing'):
     maxpool.imp(tune_kwargs={'n_trial': 1})
     out_b = maxpool.calc(x)

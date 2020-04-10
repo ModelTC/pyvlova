@@ -1,10 +1,10 @@
 import topi
 
-from .base import ArgumentedOp, OpParameter, CombinedOp
-from .binary import ChannelwiseAdd
-from .padding import Padding
-from ..poly.poly import TensorTable, Statement
-from ..poly.schedule_tree import ScheduleTree
+from pyvlova.op.base import ArgumentedOp, OpParameter, CombinedOp
+from pyvlova.op.binary import ChannelwiseAdd
+from pyvlova.op.padding import Padding
+from pyvlova.poly.poly import TensorTable, Statement
+from pyvlova.poly.schedule_tree.tree import ScheduleTree
 
 
 def schedule(**kwargs):
@@ -157,8 +157,9 @@ conv = PlainConv2d(
     stride_height=2, stride_width=2
 )
 with calc_mode.under('tvm_cuda_timing'):
-    conv.imp(tune_kwargs={'n_trial': 2})
+    conv.imp(tune_kwargs={'n_trial': 20})
     out_a = conv.calc(x, weight)
+raise Exception
 with calc_mode.under('tvm_topi_cuda_timing'):
     conv.imp(tune_kwargs={'n_trial': 2})
     out_b = conv.calc(x, weight)

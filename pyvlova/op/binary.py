@@ -1,10 +1,9 @@
 import topi
 
-from .base import ArgumentedOp
-from ..poly.poly import TensorTable
+from pyvlova.op.base import ArgumentedOp
+from pyvlova.poly.poly import TensorTable
 
-
-from .unary import schedule
+from pyvlova.op.unary import schedule
 
 
 def tensors(batch=1, channel=1, height=1, width=1, **_):

@@ -1,8 +1,8 @@
 import topi
 
-from .base import ArgumentedOp
-from ..poly.poly import TensorTable, Statement
-from ..poly.schedule_tree import ScheduleTree
+from pyvlova.op.base import ArgumentedOp
+from pyvlova.poly.poly import TensorTable, Statement
+from pyvlova.poly.schedule_tree.tree import ScheduleTree
 
 
 def schedule(**kwargs):

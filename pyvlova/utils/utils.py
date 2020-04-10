@@ -1,4 +1,3 @@
-import base64
 from collections import Mapping
 from itertools import chain
 

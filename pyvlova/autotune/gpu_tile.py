@@ -5,11 +5,10 @@ import tvm
 import numpy
 from tvm import autotvm
 
-from .builder import PolyLocalBuilder
-from ..codegen.isl_to_tir import build_tvm_stmts, CUDANode2TIRParser
-from ..poly.schedule_tree import ScheduleTree
-from ..utils import load_best, slugify
-
+from pyvlova.autotune.builder import PolyLocalBuilder
+from pyvlova.codegen.isl_to_tir import build_tvm_stmts, CUDANode2TIRParser
+from pyvlova.poly.schedule_tree.tree import ScheduleTree
+from pyvlova.utils import load_best, slugify, get_unnamed_tuples
 
 GPU_MAX_THREADS = 1024
 
@@ -167,12 +166,23 @@ class GPUTileTask(autotvm.task.Task):
         super().__init__(name, [])
         self.tree = tree
         self.parser = parser
-        _, band_size, *_ = tree.parallel_tilable()
+        box_size, lower, stride = tree.outermost_band_box()
+        band_size = [-(-i // j) for i, j in zip(box_size, stride)]
         self.config_space = GPUTileConfigSpace(GPU_MAX_THREADS, band_size)
         self.target = tvm.target.create('cuda')
+        self.flop = 0
+        self._init_flop()
 
+    def _init_flop(self):
+        self.flop = 0
         # TODO: better flop prediction
-        self.flop = reduce(float.__mul__, map(float, band_size))
+        domain = self.tree.domain()
+        stmt_instances = list()
+        domain.foreach_set(stmt_instances.append)
+        box = list(map(lambda x: x.simple_fixed_box_hull().size(), stmt_instances))
+        for i in box:
+            b, *_ = get_unnamed_tuples(i)
+            self.flop += reduce(float.__mul__, map(float, b))
 
     def instantiate(self, config):
         tree = self.tree.copy()
@@ -191,18 +201,19 @@ def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
     else:
         tuner = tuner(task)
 
-    tuner.tune(
-        n_trial=n_trial,
-        measure_option={
-            'builder': builder or PolyLocalBuilder(),
-            'runner': runner or autotvm.LocalRunner(number=6, min_repeat_ms=100, timeout=20),
-        },
-        callbacks=[
-            autotvm.callback.progress_bar(n_trial, prefix=f'GPUTile {name}'),
-            autotvm.callback.log_to_file(tmp_file_name),
-            *(callbacks or [])
-        ]
-    )
+    if n_trial > 0:
+        tuner.tune(
+            n_trial=n_trial,
+            measure_option={
+                'builder': builder or PolyLocalBuilder(),
+                'runner': runner or autotvm.LocalRunner(number=6, min_repeat_ms=100, timeout=20),
+            },
+            callbacks=[
+                autotvm.callback.progress_bar(n_trial, prefix=f'GPUTile {name}'),
+                autotvm.callback.log_to_file(tmp_file_name),
+                *(callbacks or [])
+            ]
+        )
 
     best, best_cost = load_best(tmp_file_name, task)
     best = GPUTileConfigEntity.from_json_dict(best)

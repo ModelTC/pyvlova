@@ -1,10 +1,10 @@
 import topi
 from tvm import te
 
-from .base import ArgumentedOp
-from ..poly.poly import TensorTable, Statement, trace_mode
-from ..poly.schedule_tree import ScheduleTree
-from ..utils import tir_imm
+from pyvlova.op.base import ArgumentedOp
+from pyvlova.poly.poly import TensorTable, Statement, trace_mode
+from pyvlova.poly.schedule_tree.tree import ScheduleTree
+from pyvlova.utils import tir_imm
 
 
 def schedule(**kwargs):

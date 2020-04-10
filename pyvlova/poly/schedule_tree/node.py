@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from functools import reduce
+import copy
 from typing import Dict, List, Any, Type, Mapping, Optional, Iterable, Callable
 
-import copy
-import yaml
 import isl
 
-from ..utils import get_unnamed_tuples
+from pyvlova.utils import get_unnamed_tuples
 
 
 def to_isl_style_yaml(d, indent=''):
@@ -412,152 +410,21 @@ class BandNode(NodeWithSingleChild):
         for i in range(n):
             self.schedule = self.schedule.set_at(i, old_schedule[permutation[i]])
 
+    def schedule_box(self, domain):
+        n = self.schedule.size()
+        band_map = isl.union_map.convert_from(self.schedule)
+        s = domain.apply(band_map).coalesce()
+        assert s.isa_set()
+        s = isl.set.from_union_set(s)
+        box = s.simple_fixed_box_hull()
+        strides = [int(str(s.stride(i))) for i in range(n)]
+        band_size, *_ = get_unnamed_tuples(box.size())
+        band_size = list(map(int, band_size))
+        lowers, *_ = get_unnamed_tuples(isl.point.from_pw_multi_aff(box.offset()))
+        return band_size, lowers, strides
+
 
 NodeTypes: List[Type[Node]] = [
     SequenceNode, SetNode, MarkNode, DomainNode, FilterNode,
     ExtensionNode, ContextNode, GuardNode, ExpansionNode, BandNode
 ]
-
-
-class ScheduleTree(object):
-    def __init__(self, root: Optional[Node] = None):
-        if isinstance(root, str):
-            root = type(self).from_yaml(root).root
-        self.root = root
-
-    def copy(self) -> ScheduleTree:
-        return type(self).from_yaml(self.to_yaml())
-
-    @classmethod
-    def from_dict(cls, d: Mapping[str, Any]) -> ScheduleTree:
-        return cls(Node.from_dict(d))
-
-    @classmethod
-    def from_yaml(cls, s) -> ScheduleTree:
-        if not isinstance(s, str):
-            s = str(s)
-        return cls.from_dict(yaml.load(s, Loader=yaml.Loader))
-
-    @classmethod
-    def from_file(cls, f) -> ScheduleTree:
-        if isinstance(f, str):
-            with open(f) as f:
-                return cls.from_yaml(f.read())
-        return cls.from_yaml(f.read())
-
-    @classmethod
-    def from_isl(cls, s) -> ScheduleTree:
-        if isinstance(s, isl.schedule_node):
-            s = s.schedule()
-        return cls(Node.from_isl(s.root()))
-
-    def to_yaml(self) -> str:
-        return self.root.to_yaml()
-
-    def to_isl(self) -> isl.schedule:
-        return isl.schedule(self.to_yaml())
-
-    def domain(self) -> isl.union_set:
-        return self.root.to_isl().domain()
-
-    def outermost_band(self) -> Optional[BandNode]:
-        node = self.root
-        while node and isinstance(node, NodeWithSingleChild) and not isinstance(node, BandNode):
-            node = node.child
-        if isinstance(node, BandNode):
-            return node
-        return None
-
-    def parallel_tilable(self):
-        band = self.outermost_band()
-        if band is not None and all(band.coincident) and (len(band.coincident) == 1 or band.permutable):
-            band_size, lowers, uppers, strides = list(), list(), list(), list()
-            domain = self.domain()
-            for i in range(band.schedule.size()):
-                band_map = isl.union_map(str(band.schedule.at(i).coalesce()))
-                ss = domain.apply(band_map).project_out_all_params()
-                assert ss.isa_set()
-                ss = isl.set(str(ss)).coalesce()
-                upper, lower, stride = ss.lexmax().sample_point(), ss.lexmin().sample_point(), ss.stride(0)
-                stride = int(str(stride))
-                (lower, *_), *_ = get_unnamed_tuples(lower)
-                lower = int(lower)
-                (upper, *_), *_ = get_unnamed_tuples(upper)
-                upper = int(upper)
-                lowers.append(lower)
-                uppers.append(upper)
-                strides.append(stride)
-                band_size.append((upper - lower + stride) // stride)
-            return True, band_size, lowers, uppers, strides
-        return False
-
-    def apply_params(self, *args, **kwargs):
-        return self.root.apply_params(*args, **kwargs)
-
-    def gpu_tile(self, tile_size, permutation=None):
-        tilable, band_size, lowers, uppers, strides = self.parallel_tilable()
-        n = len(band_size)
-        assert tilable
-        assert len(tile_size) == n
-        assert reduce(int.__mul__, tile_size) <= 1024
-
-        outer_size = [-(-band_size[i] // tile_size[i]) for i in range(n)]
-        thread_fake_sizes = [outer_size[i] * tile_size[i] for i in range(n)]
-        thread_fake_args = ['i%d' % i for i in range(n)]
-        thread_fake_constraints = [
-            f'({i} mod {stride}) = {lower % stride} '
-            + f'and 0 <= {i} - {lower} < {size * stride}'
-            for i, lower, stride, size in
-            zip(thread_fake_args, lowers, strides, thread_fake_sizes)
-        ]
-        thread_fake_named_tuple = f'_thread[{", ".join(thread_fake_args)}]'
-        thread_fake_statement = isl.union_set(
-            f'{{ {thread_fake_named_tuple} : {" and ".join(thread_fake_constraints)} }}'
-        )
-
-        if isinstance(self.root, DomainNode):
-            old_domain = self.domain()
-            self.root.domain = self.root.domain.union(thread_fake_statement)
-        elif isinstance(self.root, ExtensionNode):
-            # TODO
-            assert False
-        else:
-            assert False
-
-        band = self.outermost_band()
-
-        for i in range(n):
-            s = band.schedule.at(i).union_add(
-                isl.pw_aff(f'{{ {thread_fake_named_tuple} -> [({thread_fake_args[i]})] }}'))
-            band.schedule = band.schedule.set_at(i, s.coalesce())
-
-        thread_fake_branch = SequenceNode()
-        thread_fake_branch.add_child(FilterNode(filter='{%s}' % thread_fake_named_tuple))
-        old_branch = thread_fake_branch.add_child(FilterNode(filter=old_domain))
-        if band.child:
-            old_branch.child = band.child
-        band.child = thread_fake_branch
-
-        if permutation is not None:
-            band.permute(*permutation)
-        band.tile(*tile_size)
-        band.insert_before(MarkNode('bind=blockIdx'))
-        child = band.child
-        child.insert_before(MarkNode('bind=threadIdx'))
-        kernel = child.child
-        kernel.insert_before(MarkNode('clear(bind)'))
-
-
-example_tree = ScheduleTree.from_yaml('''
-domain: "[n, m, q] -> { S0[i, j]: 0 <= i < n and 0 <= j < m; S1[i, j, k]: 0 <= i < n and 0 <= j < m and 0 <= k < q}"
-child:
-  schedule: "[{S0[i, j] -> [(i)]; S1[i, j, k] -> [(i)]}, {S0[i, j] -> [(j)]; S1[i, j, k] -> [(j)]}]"
-  permutable: 1
-  coincident: [ 1, 1 ]
-  child:
-    sequence:
-    - filter: '{S0[i, j]}'
-    - filter: '{S1[i, j, k]}'
-      child:
-        schedule: "[{S1[i, j, k] -> [(k)]}]"
-''')

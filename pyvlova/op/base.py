@@ -5,11 +5,11 @@ import numpy
 import tvm
 from tvm import autotvm
 
-from ..autotune.gpu_tile import tune_gpu_tile
-from ..codegen.isl_to_tir import CUDANode2TIRParser, ISLNode2TIR, build_tvm_stmts
-from ..poly.poly import TensorTable, Statement, Tensor
-from ..poly.schedule_tree import ScheduleTree
-from ..utils import Mode, filter_contains, slugify
+from pyvlova.autotune.gpu_tile import tune_gpu_tile
+from pyvlova.codegen.isl_to_tir import CUDANode2TIRParser, ISLNode2TIR, build_tvm_stmts
+from pyvlova.poly.poly import TensorTable, Statement, Tensor
+from pyvlova.poly.schedule_tree.tree import ScheduleTree
+from pyvlova.utils import Mode, filter_contains, slugify
 
 calc_mode = Mode()
 

@@ -1,14 +1,15 @@
 import threading
 from contextlib import contextmanager
+from functools import reduce
 from typing import Dict, Iterable
 
 import tvm
 from tvm import tir, te
 import isl
 
-from ..poly.poly import IterVarTable, CUDAIterVarTable, TensorTable, Statement, Tensor
-from ..poly.schedule_tree import ScheduleTree
-from ..utils import tir_imm, slugify
+from pyvlova.poly.poly import IterVarTable, CUDAIterVarTable, TensorTable, Statement, Tensor
+from pyvlova.poly.schedule_tree.tree import ScheduleTree
+from pyvlova.utils import tir_imm, slugify
 
 
 class Parser(object):
@@ -120,24 +121,29 @@ class ISLNode2TIR(ISLNodeParser):
         self.mark_stack.pop()
         return res
 
-    @contextmanager
-    def _for_loop_util(self, node):
-        if self.mark_stack and self.mark_stack[-1].isdigit():
-            for_type = int(self.mark_stack[-1])
-        else:
-            for_type = 0
-
-        iter_var = self.iter_var_table.push()
-        c_var = self.iter_var_table.push(node.iterator().to_C_str())
-        extent_var = self.iter_var_table.push('_isl_' + node.iterator().to_C_str() + '_extent')
-
+    def _for_bounds(self, node):
         assert node.cond().arg(0).to_C_str() == node.iterator().to_C_str()
-
+        var_name = node.iterator().to_C_str()
         lower = self.expr_parser.parse(node.init())
         upper = self.expr_parser.parse(node.cond().arg(1))
         step = self.expr_parser.parse(node.inc())
         if isinstance(node.cond(), (isl.ast_expr_op_le, isl.ast_expr_op_ge)):
             upper = tir.Add(upper, step)
+
+        return var_name, lower, upper, step
+
+    @contextmanager
+    def _for_loop_vars(self, node):
+        if self.mark_stack and self.mark_stack[-1].isdigit():
+            for_type = int(self.mark_stack[-1])
+        else:
+            for_type = 0
+
+        c_var_name, lower, upper, step = self._for_bounds(node)
+
+        iter_var = self.iter_var_table.push()
+        c_var = self.iter_var_table.push(c_var_name)
+        extent_var = self.iter_var_table.push('_isl_' + node.iterator().to_C_str() + '_extent')
 
         yield iter_var, c_var, extent_var, lower, upper, step, for_type
 
@@ -146,7 +152,7 @@ class ISLNode2TIR(ISLNodeParser):
         assert self.iter_var_table.pop() is iter_var
 
     def parse_for(self, node, parent):
-        with self._for_loop_util(node) as (iter_var, c_var, extent_var, lower, upper, step, for_type):
+        with self._for_loop_vars(node) as (iter_var, c_var, extent_var, lower, upper, step, for_type):
             extent = tir.FloorDiv(tir.Sub(upper, lower), step)
             return tir.LetStmt(
                 extent_var, extent,
@@ -235,19 +241,34 @@ class CUDANode2TIRParser(ISLNode2TIR):
     def parse_for(self, node, parent):
         if self.mark_stack and self.mark_stack[-1].startswith('bind='):
             _, axis = self.mark_stack[-1].rsplit('=', 1)
-            with self._for_loop_util(node) as (_, c_var, extent_var, lower, upper, step, __):
-                with self.cuda_iter_var_table.var(axis) as iter_var:
-                    extent = tir.FloorDiv(tir.Sub(upper, lower), step)
+            bounds = []
+            cur, cur_p = node, parent
+            while isinstance(cur, isl.ast_node_for):
+                bounds.append(self._for_bounds(cur))
+                cur, cur_p = cur.body(), cur
+            extents = [(upper - lower) // step for _, lower, upper, step in bounds]
+            total = reduce(lambda x, y: x * y, extents)
+            anchors = [total // extents[0]]
+            for i in range(1, len(bounds)):
+                anchors.append(anchors[-1] // extents[i])
+
+            def recur(num, axis_var):
+                if num >= len(bounds):
+                    return self.parse(cur, cur_p)
+                c_var_name, lower, upper, step = bounds[num]
+                with self.iter_var_table.var(c_var_name) as c_var:
+                    val = axis_var // anchors[num] % extents[num]
                     return tir.LetStmt(
-                        extent_var, extent,
-                        tir.AttrStmt(
-                            node=iter_var, attr_key='thread_extent', value=extent_var,
-                            body=tir.LetStmt(
-                                c_var, tir.Add(tir.Mul(iter_var.var, step), lower),
-                                self.parse(node.body(), node)
-                            )
-                        )
+                        c_var, val * step + lower,
+                        body=recur(num + 1, axis_var)
                     )
+
+            with self.cuda_iter_var_table.var(axis) as iter_var:
+                body = tir.AttrStmt(
+                    node=iter_var, attr_key='thread_extent', value=total,
+                    body=recur(0, iter_var)
+                )
+            return body
         return super().parse_for(node, parent)
 
 

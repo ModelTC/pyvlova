@@ -10,8 +10,8 @@ import tvm
 import isl
 from tvm import te, tir
 
-from ..utils import Mode, tir_load, tir_store, tir_imm
-from ..codegen.sympy2isl import parse_sympy_to_isl_repr
+from pyvlova.utils import Mode, tir_load, tir_store, tir_imm
+from pyvlova.codegen.sympy2isl import parse_sympy_to_isl_repr
 
 
 trace_mode = Mode()

@@ -1,7 +1,7 @@
 import topi
 
-from ..poly.poly import TensorTable
-from .unary import UnaryElementwise
+from pyvlova.poly.poly import TensorTable
+from pyvlova.op.unary import UnaryElementwise
 
 
 class Flatten2d(UnaryElementwise):
