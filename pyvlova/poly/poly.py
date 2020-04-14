@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict, namedtuple
 from contextlib import contextmanager
+from functools import reduce
 from types import FunctionType
 from typing import Dict, List, Optional, Tuple, Set, Iterable
 
@@ -10,7 +11,7 @@ import tvm
 import isl
 from tvm import te, tir
 
-from pyvlova.utils import Mode, tir_load, tir_store, tir_imm
+from pyvlova.utils import Mode, tir_load, tir_store, tir_imm, sizeof
 from pyvlova.codegen.sympy2isl import parse_sympy_to_isl_repr
 
 
@@ -50,13 +51,14 @@ class _EffectiveOpRecorder(object):
             res = tir.SeqStmt(record)
         return res
 
-    def get_tensor_access(self, stmt_isl_repr) -> Tuple[Dict[str, isl.union_map], Dict[str, Set[Tensor]]]:
-        isl_mapping = defaultdict(lambda: isl.union_map('{}'))
+    def get_tensor_access(self, stmt_isl_repr) -> Tuple[Dict[str, Dict[str, isl.union_map]], Dict[str, Set[Tensor]]]:
+        isl_mapping = defaultdict(lambda: defaultdict(lambda: isl.union_map('{}')))
         vanilla = defaultdict(set)
         record = self.record[-1]
         for t, tensor, ind in record:
             ind = ', '.join(map(str, ind))
-            isl_mapping[t] = isl_mapping[t].union(isl.union_map(f'{{ {stmt_isl_repr} -> {tensor.name}[{ind}] }}'))
+            new_map = isl.union_map(f'{{ {stmt_isl_repr} -> {tensor.name}[{ind}] }}')
+            isl_mapping[t][tensor.name] = isl_mapping[t][tensor.name].union(new_map)
             vanilla[t].add(tensor)
         return isl_mapping, vanilla
 
@@ -83,7 +85,7 @@ class Tensor(object):
         s = isl.set(f'{{ {self.name}[{", ".join(keys)}] : {" and ".join(constraints)} }}')
         return s
 
-    def build_tir_realize(self, scope: str, body=None):
+    def build_tir_realize(self, scope='', body=None):
         def realize(b):
             tensor = self.te_tensor
             # noinspection PyTypeChecker
@@ -102,6 +104,10 @@ class Tensor(object):
         if body is None:
             return realize
         return realize(body)
+
+    @property
+    def size_in_bytes(self):
+        return reduce(int.__mul__, self.shape) * sizeof(self.dtype)
 
     def getitem_tvm(self, key):
         assert len(key) == len(self.shape)
@@ -184,8 +190,8 @@ class TensorTable(object):
         self.pop_scoped(name)
 
     def push_scoped(self, name: str, scope: str, tensor: Optional[Tensor] = None, factory=Tensor, shape=None, **kwargs):
-        scoped_name = f'{name}.{scope}'
         if tensor is None:
+            scoped_name = f'{name}.{scope}'
             tensor = factory(scoped_name, shape, **kwargs)
         self.scoped_stack[name].append(TensorTableItem(scope, tensor))
         return self.scoped_stack[name][-1]
@@ -239,6 +245,20 @@ class CUDAIterVarTable(IterVarTable):
     def __init__(self):
         super().__init__()
         self.axis_cnt = defaultdict(int)
+        self.var_extent = defaultdict(lambda: defaultdict(lambda: 1))
+        self.axis_extent = defaultdict(lambda: 1)
+        self.axis_idx = defaultdict(lambda: tir_imm(0))
+
+    @contextmanager
+    def axis(self, name, extent):
+        with self.var(name) as v:
+            self.axis_extent[name] *= extent
+            self.axis_idx[name] = self.axis_idx[name] * extent + v
+            self.var_extent[name][str(v.var)] = extent
+            yield v
+            del self.var_extent[name][str(v.var)]
+            self.axis_idx[name] = (self.axis_idx[name] - v) // extent
+            self.axis_extent[name] //= extent
 
     def push(self, name=None, var=None):
         k = self.axis_cnt[name]

@@ -6,12 +6,11 @@ import numpy
 from tvm import autotvm
 
 from pyvlova.autotune.builder import PolyLocalBuilder
-from pyvlova.autotune.settings import default_eval_settings
+from pyvlova.autotune.settings import default_eval_settings, cuda_settings
 from pyvlova.codegen.isl_to_tir import build_tvm_stmts, CUDANode2TIRParser
+from pyvlova.poly.gpu import gpu_tile
 from pyvlova.poly.schedule_tree.tree import ScheduleTree
 from pyvlova.utils import load_best, slugify, get_unnamed_tuples
-
-GPU_MAX_THREADS = 1024
 
 
 class GPUTileConfigEntity(list):
@@ -169,7 +168,7 @@ class GPUTileTask(autotvm.task.Task):
         self.parser = parser
         box_size, lower, stride = tree.outermost_band_box()
         band_size = [-(-i // j) for i, j in zip(box_size, stride)]
-        self.config_space = GPUTileConfigSpace(GPU_MAX_THREADS, band_size)
+        self.config_space = GPUTileConfigSpace(cuda_settings['max_threads'], band_size)
         self.target = tvm.target.create('cuda')
         self.flop = 0
         self._init_flop()
@@ -187,22 +186,22 @@ class GPUTileTask(autotvm.task.Task):
 
     def instantiate(self, config):
         tree = self.tree.copy()
-        tree.gpu_tile(config)
+        gpu_tile(tree, config)
         return build_tvm_stmts(self.name, tree, self.parser)
 
 
 def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
                   n_trial=40, builder=None, runner=None, tuner=None,
                   callbacks=None) -> Tuple[GPUTileConfigEntity, float]:
-    task = GPUTileTask(name, tree.copy(), parser)
     tmp_file_name = slugify(name) + '.gpu_tile.log'
-
-    if tuner is None:
-        tuner = autotvm.tuner.XGBTuner(task, feature_type='knob')
-    else:
-        tuner = tuner(task)
+    task = GPUTileTask(name, tree.copy(), parser)
 
     if n_trial > 0:
+        if tuner is None:
+            tuner = autotvm.tuner.XGBTuner(task, feature_type='knob')
+        else:
+            tuner = tuner(task)
+
         tuner.tune(
             n_trial=n_trial,
             measure_option={

@@ -1,4 +1,6 @@
+import re
 from collections import Mapping
+from functools import reduce
 from itertools import chain
 
 
@@ -19,3 +21,7 @@ def slugify(s):
         else:
             res.append('_')
     return ''.join(res)
+
+
+def sizeof(dtype):
+    return -(-reduce(int.__mul__, map(int, re.findall(r'\d+', str(dtype)))) // 8)

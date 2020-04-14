@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import defaultdict
+from functools import reduce
 from typing import Any, Mapping, Optional
 
 import isl
@@ -77,67 +79,12 @@ class ScheduleTree(object):
     def apply_params(self, *args, **kwargs):
         return self.root.apply_params(*args, **kwargs)
 
-    def gpu_tile(self, tile_size, permutation=None):
-        assert self.parallel_tilable()
-        box_size, lowers, strides = self.outermost_band_box()
-        n = len(box_size)
-        assert len(tile_size) == n
-
-        real_tile_size = [tile_size[i] * strides[i] for i in range(n)]
-        filled_box_size = [-(-box_size[i] // (real_tile_size[i])) * real_tile_size[i] for i in range(n)]
-
-        thread_fake_args = ['i%d' % i for i in range(n)]
-        thread_fake_constraints = [
-            f'({i} mod {stride}) = (({lower}) mod {stride})'
-            f' and 0 <= {i} - ({lower}) < {size}'
-            for i, lower, stride, size in
-            zip(thread_fake_args, lowers, strides, filled_box_size)
-        ]
-        thread_fake_named_tuple = f'_thread[{", ".join(thread_fake_args)}]'
-        thread_fake_statement = isl.union_set(
-            f'{{ {thread_fake_named_tuple} : {" and ".join(thread_fake_constraints)} }}'
-        )
-
-        old_domain = self.domain()
-        if isinstance(self.root, DomainNode):
-            self.root.domain = self.root.domain.union(thread_fake_statement)
-        elif isinstance(self.root, ExtensionNode):
-            self.root.extension = self.root.extension.union(
-                isl.union_map.from_range(thread_fake_statement))
-        else:
-            assert False
-
-        band = self.outermost_band()
-
-        for i in range(n):
-            s = band.schedule.at(i).union_add(
-                isl.pw_aff(f'{{ {thread_fake_named_tuple} -> [({thread_fake_args[i]})] }}'))
-            band.schedule = band.schedule.set_at(i, s.coalesce())
-
-        thread_fake_branch = SequenceNode()
-        thread_fake_branch.add_child(FilterNode(filter='{%s}' % thread_fake_named_tuple))
-        old_branch = thread_fake_branch.add_child(FilterNode(filter=old_domain))
-        if band.child:
-            old_branch.child = band.child
-        band.child = thread_fake_branch
-
-        if permutation is not None:
-            band.permute(*permutation)
-
-        band.tile(*real_tile_size)
-
-        band.insert_before(MarkNode('bind=blockIdx'))
-        child = band.child
-        child.insert_before(MarkNode('bind=threadIdx'))
-        kernel = child.child
-        kernel.insert_before(MarkNode('clear(bind)'))
-
 
 """
 example_tree = ScheduleTree.from_yaml('''
 domain: "[n, m, q] -> { S0[i, j]: 0 <= i < n and 0 <= j < m; S1[i, j, k]: 0 <= i < n and 0 <= j < m and 0 <= k < q}"
 child:
-  schedule: "[{S0[i, j] -> [(i * 2)]; S1[i, j, k] -> [(i * 2)]}, {S0[i, j] -> [(j)]; S1[i, j, k] -> [(j)]}]"
+  schedule: "[{S0[i, j] -> [(i)]; S1[i, j, k] -> [(i)]}, {S0[i, j] -> [(j)]; S1[i, j, k] -> [(j)]}]"
   permutable: 1
   coincident: [ 1, 1 ]
   child:

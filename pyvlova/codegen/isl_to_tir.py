@@ -7,9 +7,11 @@ import tvm
 from tvm import tir, te
 import isl
 
+from pyvlova.poly.gpu import gpu_find_sharable_tensors
 from pyvlova.poly.poly import IterVarTable, CUDAIterVarTable, TensorTable, Statement, Tensor
 from pyvlova.poly.schedule_tree.tree import ScheduleTree
 from pyvlova.utils import tir_imm, slugify
+from pyvlova.utils.tir import tir_sync
 
 
 class Parser(object):
@@ -194,9 +196,16 @@ class ISLNode2TIR(ISLNodeParser):
 
 
 class CUDANode2TIRParser(ISLNode2TIR):
-    def __init__(self, cuda_iter_var_table=None, **kwargs):
+    def __init__(self, cuda_iter_var_table=None, shared_tensors=None, has_side_effect=False, **kwargs):
         super().__init__(**kwargs)
-        self.cuda_iter_var_table = cuda_iter_var_table or CUDAIterVarTable()
+        self.cuda_iter_var_table: CUDAIterVarTable = cuda_iter_var_table or CUDAIterVarTable()
+        self.shared_tensors = shared_tensors or []
+        self.has_side_effect = has_side_effect
+
+    def gen_shared_tensors(self, tree, **kwargs):
+        self.shared_tensors = gpu_find_sharable_tensors(
+            tree, self.stmt_table, self.tensor_table, **kwargs
+        )
 
     @staticmethod
     def _produce_tensors(scope, tensors: Iterable[Tensor], body):
@@ -206,6 +215,8 @@ class CUDANode2TIRParser(ISLNode2TIR):
 
     def parse(self, node, parent=None):
         if parent is None:
+            if isinstance(node, ScheduleTree):
+                self.gen_shared_tensors(node)
             body = super().parse(node, parent)
             write_tensors = set()
             for i in self.stmt_table.values():
@@ -214,28 +225,59 @@ class CUDANode2TIRParser(ISLNode2TIR):
         return super().parse(node, parent)
 
     def before_each_mark(self, node, ast_build):
-        # TODO: calculate tensor offset in kernel
-        # name = node.name()
-        # if name in self.tensor_table:
-        #     for t in self.tensor_table[name]:
-        #         e = offset_to_ast(t[1], ast_build)
-        #         t[1] = [e.arg(i) for i in range(1, e.n_arg())]
+        if node.name() == 'bind=threadIdx':
+            for i in self.shared_tensors:
+                i.gen_offset_ast(ast_build)
         pass
 
     def parse_mark(self, node, parent):
-        body = super().parse_mark(node, parent)
-
         mark = node.id().name()
 
-        if mark.startswith('bind=') and not isinstance(node.node(), isl.ast_node_for):
-            _, axis = mark.rsplit('=', 1)
-            with self.cuda_iter_var_table.var(axis) as iter_var:
-                body = tir.AttrStmt(node=iter_var, attr_key='thread_extent', value=tir_imm(1), body=body)
+        def _build_body():
+            body = super(CUDANode2TIRParser, self).parse_mark(node, parent)
+            if mark.startswith('bind=') and not isinstance(node.node(), isl.ast_node_for):
+                _, axis = mark.rsplit('=', 1)
+                with self.cuda_iter_var_table.axis(axis, 1) as iter_var:
+                    body = tir.AttrStmt(node=iter_var, attr_key='thread_extent', value=tir_imm(1), body=body)
+            return body
 
-        # TODO: build local / shared memory realize node
-        # name = node.id().name()
-        # if name in self.tensor_table:
-        #     return self._produce_tensors(name, body)
+        if mark == 'bind=threadIdx':
+            def _under_shared(ith):
+                if ith >= len(self.shared_tensors):
+                    return _build_body()
+                tensor = self.shared_tensors[ith]
+                with self.tensor_table.scoped(tensor.origin.name, 'shared', tensor=tensor):
+                    return tensor.build_tir_realize('shared', _under_shared(ith + 1))
+
+            for i in self.shared_tensors:
+                i.gen_offset_tvm_repr(self.expr_parser)
+            body = _under_shared(0)
+        else:
+            body = _build_body()
+
+        if mark == 'clear(bind)':
+            tensors_from_host = []
+            for i in self.shared_tensors:
+                if self.has_side_effect and 'read' in i.access_types \
+                        or not self.has_side_effect and 'write' not in i.access_types:
+                    tensors_from_host.append(i)
+            tensors_to_host = []
+            for i in self.shared_tensors:
+                if 'write' in i.access_types:
+                    tensors_to_host.append(i)
+            stmts = []
+            for i in tensors_from_host:
+                stmts.append(i.build_copy_from_host(self.cuda_iter_var_table, self.iter_var_table))
+            if tensors_from_host:
+                stmts.append(tir.Evaluate(tir_sync('shared')))
+            stmts.append(body)
+            if tensors_to_host:
+                stmts.append(tir.Evaluate(tir_sync('shared')))
+            for i in tensors_to_host:
+                stmts.append(i.build_copy_to_host(self.cuda_iter_var_table, self.iter_var_table))
+            if len(stmts) >= 2:
+                body = tir.SeqStmt(stmts)
+
         return body
 
     def parse_for(self, node, parent):
@@ -248,6 +290,9 @@ class CUDANode2TIRParser(ISLNode2TIR):
                 cur, cur_p = cur.body(), cur
             extents = [(upper - lower) // step for _, lower, upper, step in bounds]
             total = reduce(lambda x, y: x * y, extents)
+            total = tir.ir_pass.Simplify(total)
+            assert str(total).isdigit()
+            total = int(str(total))
             anchors = [total // extents[0]]
             for i in range(1, len(bounds)):
                 anchors.append(anchors[-1] // extents[i])
@@ -263,9 +308,9 @@ class CUDANode2TIRParser(ISLNode2TIR):
                         body=recur(num + 1, axis_var)
                     )
 
-            with self.cuda_iter_var_table.var(axis) as iter_var:
+            with self.cuda_iter_var_table.axis(axis, total) as iter_var:
                 body = tir.AttrStmt(
-                    node=iter_var, attr_key='thread_extent', value=total,
+                    node=iter_var, attr_key='thread_extent', value=tir_imm(total),
                     body=recur(0, iter_var)
                 )
             return body

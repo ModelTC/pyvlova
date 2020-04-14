@@ -20,8 +20,23 @@ def get_unnamed_tuples(obj):
     return res
 
 
-def structure_fixed_box(box: isl.fixed_box):
+def structure_named_fixed_box(box: isl.fixed_box):
     (name, size), *_ = get_named_tuples(box.size())
     size = list(map(int, size))
     offset = box.offset()
-    return name, len(size), size, offset
+    return name, size, offset
+
+
+def structure_unnamed_fixed_box(box: isl.fixed_box):
+    size, *_ = get_unnamed_tuples(box.size())
+    size = list(map(int, size))
+    offset = box.offset()
+    return size, offset
+
+
+def map_out_constant_dim(obj):
+    if hasattr(obj, 'coalesce'):
+        obj = obj.coalesce()
+    old, *_ = get_unnamed_tuples(obj)
+    new = filter(lambda x: not x.isdigit(), old)
+    return isl.map(f'{{ [{", ".join(old)}] -> [{", ".join(new)}] }}')

@@ -144,26 +144,10 @@ class Conv2d(CombinedOp):
         return x
 
 
-'''
 import tvm
 import numpy
 from .base import calc_mode
 ctx = tvm.gpu()
-x = tvm.nd.array(numpy.random.random((1, 3, 230, 230)).astype('float32'), ctx=ctx)
-weight = tvm.nd.array(numpy.random.random((64, 3, 7, 7)).astype('float32'), ctx=ctx)
-conv = PlainConv2d(
-    in_channel=3, in_height=230, in_width=230,
-    out_channel=64, kernel_height=7, kernel_width=7,
-    stride_height=2, stride_width=2
-)
-with calc_mode.under('tvm_cuda_timing'):
-    conv.imp(tune_kwargs={'n_trial': 20})
-    out_a = conv.calc(x, weight)
-raise Exception
-with calc_mode.under('tvm_topi_cuda_timing'):
-    conv.imp(tune_kwargs={'n_trial': 2})
-    out_b = conv.calc(x, weight)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 1e-3)
 x = tvm.nd.array(numpy.random.random((1, 3, 224, 224)).astype('float32'), ctx=ctx)
 import torch
 tconv1 = torch.nn.Conv2d(3, 64, 7, 2, 3, True)
@@ -178,12 +162,12 @@ conv1 = Conv2d(
 conv1.weight = tconv1.weight.detach().cpu().numpy()
 conv1.bias = tconv1.bias.detach().cpu().numpy()
 with calc_mode.under('tvm_cuda_timing'):
-    conv1.imp(tune_kwargs={'n_trial': 2})
+    conv1.bias_layer.imp(tile_size=[1, 3, 88, 1])
+    conv1.imp(tune_kwargs={'n_trial': 24})
     out_a = conv1.calc(x)
 with calc_mode.under('tvm_topi_cuda_timing'):
-    conv1.imp(tune_kwargs={'n_trial': 2})
+    conv1.imp(tune_kwargs={'n_trial': 24})
     out_b = conv1.calc(x)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 1e-3)
+tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 0.5, 1e-3)
 tvm.testing.assert_allclose(out_a.asnumpy(), out_t, 0.5, 1e-3)
 tvm.testing.assert_allclose(out_b.asnumpy(), out_t, 0.5, 1e-3)
-'''

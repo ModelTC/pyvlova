@@ -5,9 +5,10 @@ import numpy
 import tvm
 from tvm import autotvm
 
-from pyvlova.autotune.gpu_tile import tune_gpu_tile
+from pyvlova.autotune.gpu import tune_gpu_tile
 from pyvlova.autotune.settings import default_eval_settings
 from pyvlova.codegen.isl_to_tir import CUDANode2TIRParser, ISLNode2TIR, build_tvm_stmts
+from pyvlova.poly.gpu import gpu_tile, gpu_find_sharable_tensors
 from pyvlova.poly.poly import TensorTable, Statement, Tensor
 from pyvlova.poly.schedule_tree.tree import ScheduleTree
 from pyvlova.utils import Mode, filter_contains, slugify
@@ -111,8 +112,8 @@ class PolyOp(BaseOp):
         for s in self.statements.values():
             s.tensor_table = self.tensors
 
-    def get_parser(self, factory=ISLNode2TIR):
-        return factory(tensor_table=self.tensors, stmt_table=self.statements)
+    def get_parser(self, factory=ISLNode2TIR, **kwargs):
+        return factory(tensor_table=self.tensors, stmt_table=self.statements, **kwargs)
 
     def calc(self, *args, **kwargs):
         assert calc_mode.mode
@@ -183,7 +184,7 @@ class PolyTVMOp(PolyOp):
             # noinspection PyTypeChecker
             tile_size, _ = tune_gpu_tile(name, self.schedule, parser, **(tune_kwargs or {}))
         tree = self.schedule.copy()
-        tree.gpu_tile(tile_size)
+        gpu_tile(tree, tile_size)
         stmts, tensors = build_tvm_stmts(name, tree, parser, te_tensors=te_tensors)
         assert all((i.name == j.name for i, j in zip(te_tensors, tensors)))
         with tvm.target.create('cuda'):
@@ -244,20 +245,21 @@ class PolyTVMOp(PolyOp):
     def _tune_topi_cuda(self, name, args, te_tensors, tune_kwargs):
         n_trial = tune_kwargs.get('n_trial', 40)
         tmp_file_name = slugify(name) + '.topi_cuda.log'
-        task = autotvm.task.create(self.topi_cuda_task_name, args=args, target='cuda')
-        tuner = tune_kwargs.get('tuner', autotvm.tuner.XGBTuner(task))
-        tuner.tune(
-            n_trial=n_trial,
-            measure_option={
-                'builder': tune_kwargs.get('builder', autotvm.LocalBuilder()),
-                'runner': tune_kwargs.get('runner', autotvm.LocalRunner(timeout=20, **default_eval_settings)),
-            },
-            callbacks=[
-                autotvm.callback.progress_bar(n_trial, prefix=f'TOPI {name}'),
-                autotvm.callback.log_to_file(tmp_file_name),
-                *tune_kwargs.get('callbacks', [])
-            ]
-        )
+        if n_trial > 0:
+            task = autotvm.task.create(self.topi_cuda_task_name, args=args, target='cuda')
+            tuner = tune_kwargs.get('tuner', autotvm.tuner.XGBTuner(task))
+            tuner.tune(
+                n_trial=n_trial,
+                measure_option={
+                    'builder': tune_kwargs.get('builder', autotvm.LocalBuilder()),
+                    'runner': tune_kwargs.get('runner', autotvm.LocalRunner(timeout=20, **default_eval_settings)),
+                },
+                callbacks=[
+                    autotvm.callback.progress_bar(n_trial, prefix=f'TOPI {name}'),
+                    autotvm.callback.log_to_file(tmp_file_name),
+                    *tune_kwargs.get('callbacks', [])
+                ]
+            )
         with autotvm.apply_history_best(tmp_file_name):
             return self._build_topi_cuda(name, args, te_tensors)
 
