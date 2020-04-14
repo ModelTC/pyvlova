@@ -10,8 +10,7 @@ from pyvlova.poly.poly import Tensor, CUDAIterVarTable, IterVarTable, Statement,
 from pyvlova.poly.schedule_tree.node import DomainNode, ExtensionNode, SequenceNode, FilterNode, MarkNode, \
     NodeWithSingleChild
 from pyvlova.utils import get_unnamed_tuples, tir_load, tir_imm, tir_store, structure_unnamed_fixed_box, \
-    map_out_constant_dim
-from pyvlova.utils.tir import tir_sync
+    map_out_constant_dim, tir_sync, copy_ast_build
 
 
 def gpu_tile(tree, tile_size, permutation=None):
@@ -94,6 +93,7 @@ class BlockTensorUsage(Tensor):
         return super(BlockTensorUsage, self).build_tir_realize(scope, body)
 
     def gen_offset_ast(self, ast_build: isl.ast_build):
+        ast_build = copy_ast_build(ast_build)
         s_map = isl.set(str(ast_build.schedule_space())).identity().flatten_range()
         upma = isl.union_pw_multi_aff.from_union_map(s_map.apply_range(self.offset_map))
         assert upma.isa_pw_multi_aff()

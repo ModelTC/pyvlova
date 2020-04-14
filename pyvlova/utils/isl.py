@@ -3,6 +3,10 @@ import re
 import isl
 
 
+def copy_ast_build(obj):
+    return isl.ast_build(ctx=obj.ctx, ptr=isl.isl.isl_ast_build_copy(obj.ptr))
+
+
 def get_named_tuples(obj):
     obj = str(obj)
     res = re.findall(r'(\w+)\[(.*?)\]', str(obj))

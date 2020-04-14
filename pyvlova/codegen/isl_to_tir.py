@@ -10,8 +10,7 @@ import isl
 from pyvlova.poly.gpu import gpu_find_sharable_tensors
 from pyvlova.poly.poly import IterVarTable, CUDAIterVarTable, TensorTable, Statement, Tensor
 from pyvlova.poly.schedule_tree.tree import ScheduleTree
-from pyvlova.utils import tir_imm, slugify
-from pyvlova.utils.tir import tir_sync
+from pyvlova.utils import tir_imm, slugify, tir_sync
 
 
 class Parser(object):
@@ -33,8 +32,10 @@ class ISLNodeParser(Parser):
     def parse(self, node, parent=None):
         if isinstance(node, ScheduleTree):
             node = node.to_isl()
+            print(node.root())
         if isinstance(node, isl.schedule):
             node = self.ast_build.node_from(node)
+            print(node.to_C_str())
         assert type(node).__name__.startswith('ast_node_')
         t = type(node).__name__[len('ast_node_'):]
         assert t in ['block', 'for', 'if', 'list', 'mark', 'user']
@@ -241,7 +242,7 @@ class CUDANode2TIRParser(ISLNode2TIR):
                     body = tir.AttrStmt(node=iter_var, attr_key='thread_extent', value=tir_imm(1), body=body)
             return body
 
-        if mark == 'bind=threadIdx':
+        if mark == 'bind=threadIdx' and mark not in self.mark_stack:
             def _under_shared(ith):
                 if ith >= len(self.shared_tensors):
                     return _build_body()
@@ -255,7 +256,7 @@ class CUDANode2TIRParser(ISLNode2TIR):
         else:
             body = _build_body()
 
-        if mark == 'clear(bind)':
+        if mark == 'clear(bind)' and mark not in self.mark_stack:
             tensors_from_host = []
             for i in self.shared_tensors:
                 if self.has_side_effect and 'read' in i.access_types \
@@ -275,6 +276,8 @@ class CUDANode2TIRParser(ISLNode2TIR):
                 stmts.append(tir.Evaluate(tir_sync('shared')))
             for i in tensors_to_host:
                 stmts.append(i.build_copy_to_host(self.cuda_iter_var_table, self.iter_var_table))
+            import pdb; pdb.set_trace()
+            print(stmts)
             if len(stmts) >= 2:
                 body = tir.SeqStmt(stmts)
 
@@ -332,7 +335,9 @@ def building_poly(stmts, binds, arg_list):
 # noinspection PyUnresolvedReferences
 def build_tvm_stmts(name, tree, parser: ISLNode2TIR, te_tensors=None):
     stmts = parser.parse(tree)
+    print(stmts)
     stmts = tir.ir_pass.CanonicalSimplify(stmts)
+    print(stmts)
 
     if te_tensors is None:
         tensor_table = parser.tensor_table
