@@ -162,7 +162,6 @@ conv1 = Conv2d(
 conv1.weight = tconv1.weight.detach().cpu().numpy()
 conv1.bias = tconv1.bias.detach().cpu().numpy()
 with calc_mode.under('tvm_cuda_timing'):
-    conv1.bias_layer.imp(tile_size=[1, 3, 88, 1])
     conv1.imp(tune_kwargs={'n_trial': 24})
     out_a = conv1.calc(x)
 with calc_mode.under('tvm_topi_cuda_timing'):
