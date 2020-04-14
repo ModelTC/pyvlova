@@ -147,6 +147,28 @@ class BlockTensorUsage(Tensor):
         num_threads = cuda_var_table.axis_extent['threadIdx']
         idx = cuda_var_table.axis_idx['threadIdx']
         total = reduce(int.__mul__, self.extent)
+        with iter_var_table.var() as iter_var:
+            _, old_idx = self._get_tensor_index(iter_var * num_threads + idx)
+            # noinspection PyTypeChecker
+            cond = reduce(tir.And, [
+                tir.LT(i - j, tir_imm(k))
+                for i, j, k in zip(old_idx, self.origin.offset, self.origin.shape)
+            ])
+            # noinspection PyTypeChecker
+            body = tir.For(
+                iter_var, tir_imm(0), -(-total // num_threads), tir.For.Serial, 0,
+                tir.IfThenElse(
+                    cond, stmt.to_tvm(None, iter_var * num_threads + idx), None
+                )
+            )
+        return body
+
+    def _bad_build_copy_schedule(self, cuda_var_table: CUDAIterVarTable, iter_var_table: IterVarTable, stmt: Statement):
+        raise Exception('Bad implementation')
+        # noinspection PyUnreachableCode
+        num_threads = cuda_var_table.axis_extent['threadIdx']
+        idx = cuda_var_table.axis_idx['threadIdx']
+        total = reduce(int.__mul__, self.extent)
 
         def _build_slow_loop(extent, fast_body):
             last_idx = (extent - 1) * num_threads + idx

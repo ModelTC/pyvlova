@@ -1,7 +1,7 @@
 default_eval_settings = {
-    'repeat': 20,
-    'number': 2,
-    'min_repeat_ms': 0,
+    'repeat': 10,
+    'number': 30,
+    'min_repeat_ms': 5,
 }
 
 cuda_settings = {
