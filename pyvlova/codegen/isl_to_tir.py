@@ -32,10 +32,8 @@ class ISLNodeParser(Parser):
     def parse(self, node, parent=None):
         if isinstance(node, ScheduleTree):
             node = node.to_isl()
-            print(node.root())
         if isinstance(node, isl.schedule):
             node = self.ast_build.node_from(node)
-            print(node.to_C_str())
         assert type(node).__name__.startswith('ast_node_')
         t = type(node).__name__[len('ast_node_'):]
         assert t in ['block', 'for', 'if', 'list', 'mark', 'user']
@@ -312,7 +310,6 @@ class CUDANode2TIRParser(ISLNode2TIR):
                     stmts.append(tir.Evaluate(tir_sync('shared')))
                 for i in tensors_to_host:
                     stmts.append(i.build_copy_to_host(self.cuda_iter_var_table, self.iter_var_table))
-                print(stmts)
                 if len(stmts) >= 2:
                     body = tir.SeqStmt(stmts)
 
@@ -335,9 +332,7 @@ def building_poly(stmts, binds, arg_list):
 # noinspection PyUnresolvedReferences
 def build_tvm_stmts(name, tree, parser: ISLNode2TIR, te_tensors=None):
     stmts = parser.parse(tree)
-    print(stmts)
     stmts = tir.ir_pass.CanonicalSimplify(stmts)
-    print(stmts)
 
     if te_tensors is None:
         tensor_table = parser.tensor_table

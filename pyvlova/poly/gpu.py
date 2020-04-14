@@ -296,4 +296,6 @@ def gpu_find_sharable_tensors(tree, statements, tensors, max_shared_memory=None)
         shared_total_usage += bytes_usage
         res.append(i)
 
+    res = list(filter(lambda x: x.access_types == {'read'}, res))
+
     return res
