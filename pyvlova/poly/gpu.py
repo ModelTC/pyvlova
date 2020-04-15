@@ -70,12 +70,12 @@ def gpu_tile(tree, tile_size, permutation=None):
 
 
 class BlockTensorUsage(Tensor):
-    def __init__(self, origin: Tensor, box_size, strides, offset_map, access_types):
+    def __init__(self, origin: Tensor, box_size, strides, offset_pma, access_types):
         self.origin = origin
         self.box_size = list(box_size)
         self.strides = list(strides)
-        self.offset_map: isl.map = offset_map.coalesce()
-        assert isinstance(self.offset_map, isl.map)
+        self.offset_pma: isl.pw_multi_aff = offset_pma.coalesce()
+        assert isinstance(self.offset_pma, isl.pw_multi_aff)
         self.offset_ast = None
         self.offset_tvm_repr = None
         self.access_types = set(access_types)
@@ -93,10 +93,9 @@ class BlockTensorUsage(Tensor):
         return super(BlockTensorUsage, self).build_tir_realize(scope, body)
 
     def gen_offset_ast(self, ast_build: isl.ast_build):
-        s_map = isl.set(str(ast_build.schedule_space())).identity().flatten_range()
-        upma = isl.union_pw_multi_aff.from_union_map(s_map.apply_range(self.offset_map))
-        assert upma.isa_pw_multi_aff()
-        pma = upma.as_pw_multi_aff()
+        s_map = ast_build.schedule_map().flatten_domain()
+        o_map = isl.map.from_pw_multi_aff(self.offset_pma).apply_domain(s_map)
+        pma = isl.pw_multi_aff.from_union_map(o_map).as_pw_multi_aff()
         call = ast_build.call_from(pma)
         self.offset_ast = [call.arg(i) for i in range(1, call.n_arg())]
 
@@ -150,7 +149,6 @@ class BlockTensorUsage(Tensor):
         total = reduce(int.__mul__, self.extent)
         with iter_var_table.var() as iter_var:
             # noinspection PyTypeChecker
-            print(idx)
             body = tir.For(
                 iter_var, tir_imm(0), (total - 1 - idx) // num_threads + 1, tir.For.Serial, 0,
                 stmt.to_tvm(None, iter_var * num_threads + idx)
@@ -283,19 +281,14 @@ def gpu_find_sharable_tensors(tree, statements, tensors, max_shared_memory=None)
                 total = reduce(int.__mul__, [-(-i // j) for i, j in zip(box_size, strides)])
                 access_count[name] += total
 
-    schedule_space = tree.domain().apply(node.to_isl().prefix_schedule_relation()).coalesce()
-    real_space_map = map_out_constant_dim(schedule_space)
-
     usages = []
     for name in tensor_access:
         box = tensor_access[name].range_simple_fixed_box_hull()
         box_size, offset = structure_unnamed_fixed_box(box)
-        offset_map = isl.map.from_pw_multi_aff(offset)
-        offset_map = real_space_map.reverse().apply_range(offset_map)
         s = tensor_access[name].range()
         strides = [int(str(s.stride(i))) for i in range(len(box_size))]
         usages.append(BlockTensorUsage(
-            tensors[name], box_size, strides, offset_map, tensor_access_types[name]
+            tensors[name], box_size, strides, offset, tensor_access_types[name]
         ))
 
     usages.sort(key=lambda x: x.size_in_bytes)
@@ -304,15 +297,13 @@ def gpu_find_sharable_tensors(tree, statements, tensors, max_shared_memory=None)
     shared_total_usage = 0
     for i in usages:
         name = i.origin.name
-        bytes_usage = i.size_in_bytes
-        if bytes_usage * 80 >= access_count[name]:
+        bytes_usage = -(-i.size_in_bytes // 32) * 32
+        if bytes_usage * 2 >= access_count[name]:
             continue
+        bytes_usage = -(-bytes_usage // 32) * 32
         if bytes_usage + shared_total_usage > max_shared_memory:
             break
         shared_total_usage += bytes_usage
         res.append(i)
 
-    res = list(filter(lambda x: x.access_types == {'read'}, res))
-    print(res)
-
-    return res[:1]
+    return res

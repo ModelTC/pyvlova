@@ -6,5 +6,5 @@ default_eval_settings = {
 
 cuda_settings = {
     'max_threads': 1024,
-    'max_shared_memory': 48 * 1024,
+    'max_shared_memory': 48 * 1024 // 8,
 }
