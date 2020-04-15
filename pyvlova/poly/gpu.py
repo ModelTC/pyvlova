@@ -81,13 +81,19 @@ class BlockTensorUsage(Tensor):
         self.access_types = set(access_types)
         super(BlockTensorUsage, self).__init__(
             name=f'_{self.origin.name}_shared',
-            shape=self.extent,
+            shape=self.extent(False),
             dtype=self.origin.dtype
         )
 
-    @property
-    def extent(self):
-        return [-(-i // j) for i, j in zip(self.box_size, self.strides)]
+    def extent(self, with_offset):
+        extent = [-(-i // j) for i, j in zip(self.box_size, self.strides)]
+        if not with_offset:
+            return extent
+        extent = [
+            tir.Min(tir_imm(i), tir_imm(j) - k)
+            for i, j, k in zip(extent, self.origin.shape, self.offset_tvm_repr)
+        ]
+        return extent
 
     def build_tir_realize(self, scope='shared', body=None):
         return super(BlockTensorUsage, self).build_tir_realize(scope, body)
@@ -116,7 +122,7 @@ class BlockTensorUsage(Tensor):
         return self._build_copy(cuda_var_table, iter_var_table, copy_to_host)
 
     def _get_tensor_index(self, idx):
-        extent = self.extent
+        extent = self.extent(True)
         idx_strides = list(extent) + [1]
         for i in range(len(extent) - 1, -1, -1):
             idx_strides[i] *= idx_strides[i + 1]
@@ -146,20 +152,14 @@ class BlockTensorUsage(Tensor):
         # noinspection PyUnreachableCode
         num_threads = cuda_var_table.axis_extent['threadIdx']
         idx = cuda_var_table.axis_idx['threadIdx']
-        full_total = reduce(int.__mul__, self.extent)
-        res_total = reduce(tir.Mul, [
-            tir_imm(i) - k
-            for i, k in zip(self.origin.shape, self.offset_tvm_repr)
-        ])
-        with iter_var_table.var() as iter_var, \
-                iter_var_table.var() as extent_var, iter_var_table.var() as total_var:
+        total = reduce(int.__mul__, self.extent(True))
+        with iter_var_table.var() as iter_var, iter_var_table.var() as extent_var:
             # noinspection PyTypeChecker
             body = tir.For(
                 iter_var, tir_imm(0), extent_var, tir.For.Serial, 0,
                 stmt.to_tvm(None, iter_var * num_threads + idx)
             )
-            body = tir.LetStmt(extent_var, (total_var - 1 - idx) // num_threads + 1, body)
-            body = tir.LetStmt(total_var, tir.Min(tir_imm(full_total), res_total), body)
+            body = tir.LetStmt(extent_var, (total - 1 - idx) // num_threads + 1, body)
         return body
 
     def _bad_build_copy_schedule(self, cuda_var_table: CUDAIterVarTable, iter_var_table: IterVarTable, stmt: Statement):
@@ -167,7 +167,7 @@ class BlockTensorUsage(Tensor):
         # noinspection PyUnreachableCode
         num_threads = cuda_var_table.axis_extent['threadIdx']
         idx = cuda_var_table.axis_idx['threadIdx']
-        total = reduce(int.__mul__, self.extent)
+        total = reduce(int.__mul__, self.extent(True))
 
         def _build_slow_loop(extent, fast_body):
             last_idx = (extent - 1) * num_threads + idx
