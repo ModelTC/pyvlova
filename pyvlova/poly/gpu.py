@@ -146,13 +146,20 @@ class BlockTensorUsage(Tensor):
         # noinspection PyUnreachableCode
         num_threads = cuda_var_table.axis_extent['threadIdx']
         idx = cuda_var_table.axis_idx['threadIdx']
-        total = reduce(int.__mul__, self.extent)
-        with iter_var_table.var() as iter_var:
+        full_total = reduce(int.__mul__, self.extent)
+        res_total = reduce(tir.Mul, [
+            tir_imm(i) - k
+            for i, k in zip(self.origin.shape, self.offset_tvm_repr)
+        ])
+        with iter_var_table.var() as iter_var, \
+                iter_var_table.var() as extent_var, iter_var_table.var() as total_var:
             # noinspection PyTypeChecker
             body = tir.For(
-                iter_var, tir_imm(0), (total - 1 - idx) // num_threads + 1, tir.For.Serial, 0,
+                iter_var, tir_imm(0), extent_var, tir.For.Serial, 0,
                 stmt.to_tvm(None, iter_var * num_threads + idx)
             )
+            body = tir.LetStmt(extent_var, (total_var - 1 - idx) // num_threads + 1, body)
+            body = tir.LetStmt(total_var, tir.Min(tir_imm(full_total), res_total), body)
         return body
 
     def _bad_build_copy_schedule(self, cuda_var_table: CUDAIterVarTable, iter_var_table: IterVarTable, stmt: Statement):
@@ -198,17 +205,16 @@ class BlockTensorUsage(Tensor):
                     stmt.to_tvm(None, iter_var * num_threads + idx)
                 )
             if outer_extent:
-                with iter_var_table.var() as outer_var:
-                    with iter_var_table.var() as inner_var:
-                        loop_body = stmt.to_tvm(
-                            None, (outer_var * self.UNROLL_SIZE + inner_var) * num_threads + idx
-                        )
-                        loop_body = tir.For(
-                            inner_var, tir_imm(0), self.UNROLL_SIZE, tir.For.Unrolled, 0, loop_body
-                        )
-                        loop_body = tir.For(
-                            outer_var, tir_imm(0), outer_extent, tir.For.Serial, 0, loop_body
-                        )
+                with iter_var_table.var() as outer_var, iter_var_table.var() as inner_var:
+                    loop_body = stmt.to_tvm(
+                        None, (outer_var * self.UNROLL_SIZE + inner_var) * num_threads + idx
+                    )
+                    loop_body = tir.For(
+                        inner_var, tir_imm(0), self.UNROLL_SIZE, tir.For.Unrolled, 0, loop_body
+                    )
+                    loop_body = tir.For(
+                        outer_var, tir_imm(0), outer_extent, tir.For.Serial, 0, loop_body
+                    )
                 return tir.SeqStmt([loop_body, remained_body])
             return remained_body
 

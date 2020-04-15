@@ -293,21 +293,19 @@ class Statement(object):
         return record_effective_op.to_stmt()
 
     def to_tvm(self, tensor_table, *args):
-        with trace_mode.under('tvm'):
-            with record_effective_op.recording():
-                return self.to_stmt(tensor_table, *args)
+        with trace_mode.under('tvm'), record_effective_op.recording():
+            return self.to_stmt(tensor_table, *args)
 
     def get_access(self, tensor_table=None):
         if tensor_table is None:
             tensor_table = self.tensor_table
         if self.access is None:
             assert tensor_table is not None
-            with trace_mode.under('tensor_access'):
-                with record_effective_op.recording():
-                    args = [sympy.var('i%d' % i) for i in range(self.dim)]
-                    isl_repr = f'{self.name}[{", ".join(map(str, args))}]'
-                    self.calc(tensor_table, *args)
-                    self.access = record_effective_op.get_tensor_access(isl_repr)
+            with trace_mode.under('tensor_access'), record_effective_op.recording():
+                args = [sympy.var('i%d' % i) for i in range(self.dim)]
+                isl_repr = f'{self.name}[{", ".join(map(str, args))}]'
+                self.calc(tensor_table, *args)
+                self.access = record_effective_op.get_tensor_access(isl_repr)
         return self.access
 
 
