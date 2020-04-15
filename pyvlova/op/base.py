@@ -186,6 +186,7 @@ class PolyTVMOp(PolyOp):
         tree = self.schedule.copy()
         gpu_tile(tree, tile_size)
         stmts, tensors = build_tvm_stmts(name, tree, parser, te_tensors=te_tensors)
+        print(stmts)
         assert all((i.name == j.name for i, j in zip(te_tensors, tensors)))
         with tvm.target.create('cuda'):
             func = tvm.build(stmts, name=name)
@@ -272,6 +273,7 @@ class PolyTVMOp(PolyOp):
             if te_tensors[i].name in named_res:
                 te_tensors[i] = named_res[te_tensors[i].name]
         s = type(self).topi_cuda_schedule_func(res)
+        # print(tvm.lower(s, te_tensors, name=slugify(name)))
         func = tvm.build(s, te_tensors, name=slugify(name))
         return func
 

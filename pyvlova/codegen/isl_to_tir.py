@@ -344,6 +344,8 @@ def build_tvm_stmts(name, tree, parser: ISLNode2TIR, te_tensors=None):
         tvm_s = te.create_schedule(te_tensors[-1].op)
         stmts = tvm.lower(tvm_s, te_tensors, name=slugify(name))
 
+    # print(stmts)
+
     return stmts, te_tensors
 
 

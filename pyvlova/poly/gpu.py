@@ -10,7 +10,7 @@ from pyvlova.poly.poly import Tensor, CUDAIterVarTable, IterVarTable, Statement,
 from pyvlova.poly.schedule_tree.node import DomainNode, ExtensionNode, SequenceNode, FilterNode, MarkNode, \
     NodeWithSingleChild
 from pyvlova.utils import get_unnamed_tuples, tir_load, tir_imm, tir_store, structure_unnamed_fixed_box, \
-    map_out_constant_dim, tir_sync, copy_ast_build
+    map_out_constant_dim, tir_sync
 
 
 def gpu_tile(tree, tile_size, permutation=None):
@@ -93,7 +93,6 @@ class BlockTensorUsage(Tensor):
         return super(BlockTensorUsage, self).build_tir_realize(scope, body)
 
     def gen_offset_ast(self, ast_build: isl.ast_build):
-        ast_build = copy_ast_build(ast_build)
         s_map = isl.set(str(ast_build.schedule_space())).identity().flatten_range()
         upma = isl.union_pw_multi_aff.from_union_map(s_map.apply_range(self.offset_map))
         assert upma.isa_pw_multi_aff()
@@ -144,22 +143,17 @@ class BlockTensorUsage(Tensor):
         return self._build_copy_schedule(cuda_var_table, iter_var_table, stmt)
 
     def _build_copy_schedule(self, cuda_var_table: CUDAIterVarTable, iter_var_table: IterVarTable, stmt: Statement):
+        # raise Exception('Bad implementation')
+        # noinspection PyUnreachableCode
         num_threads = cuda_var_table.axis_extent['threadIdx']
         idx = cuda_var_table.axis_idx['threadIdx']
         total = reduce(int.__mul__, self.extent)
         with iter_var_table.var() as iter_var:
-            _, old_idx = self._get_tensor_index(iter_var * num_threads + idx)
             # noinspection PyTypeChecker
-            cond = reduce(tir.And, [
-                tir.LT(i - j, tir_imm(k))
-                for i, j, k in zip(old_idx, self.origin.offset, self.origin.shape)
-            ])
-            # noinspection PyTypeChecker
+            print(idx)
             body = tir.For(
-                iter_var, tir_imm(0), -(-total // num_threads), tir.For.Serial, 0,
-                tir.IfThenElse(
-                    cond, stmt.to_tvm(None, iter_var * num_threads + idx), None
-                )
+                iter_var, tir_imm(0), (total - 1 - idx) // num_threads + 1, tir.For.Serial, 0,
+                stmt.to_tvm(None, iter_var * num_threads + idx)
             )
         return body
 
@@ -311,7 +305,7 @@ def gpu_find_sharable_tensors(tree, statements, tensors, max_shared_memory=None)
     for i in usages:
         name = i.origin.name
         bytes_usage = i.size_in_bytes
-        if bytes_usage * 3 >= access_count[name]:
+        if bytes_usage * 80 >= access_count[name]:
             continue
         if bytes_usage + shared_total_usage > max_shared_memory:
             break
@@ -319,5 +313,6 @@ def gpu_find_sharable_tensors(tree, statements, tensors, max_shared_memory=None)
         res.append(i)
 
     res = list(filter(lambda x: x.access_types == {'read'}, res))
+    print(res)
 
-    return res
+    return res[:1]

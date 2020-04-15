@@ -162,10 +162,11 @@ conv1 = Conv2d(
 conv1.weight = tconv1.weight.detach().cpu().numpy()
 conv1.bias = tconv1.bias.detach().cpu().numpy()
 with calc_mode.under('tvm_cuda_timing'):
-    conv1.imp(tune_kwargs={'n_trial': 24})
+    conv1.imp(tune_kwargs={'n_trial': 0})
+    # conv1.imp(tune_kwargs={'n_trial': 48})
     out_a = conv1.calc(x)
 with calc_mode.under('tvm_topi_cuda_timing'):
-    conv1.imp(tune_kwargs={'n_trial': 24})
+    conv1.imp(tune_kwargs={'n_trial': 48})
     out_b = conv1.calc(x)
 tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 0.5, 1e-3)
 tvm.testing.assert_allclose(out_a.asnumpy(), out_t, 0.5, 1e-3)

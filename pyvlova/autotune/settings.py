@@ -1,6 +1,6 @@
 default_eval_settings = {
     'repeat': 10,
-    'number': 30,
+    'number': 24,
     'min_repeat_ms': 5,
 }
 
