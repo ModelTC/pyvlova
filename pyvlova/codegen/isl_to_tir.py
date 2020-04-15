@@ -206,6 +206,9 @@ class CUDANode2TIRParser(ISLNode2TIR):
             tree, self.stmt_table, self.tensor_table, **kwargs
         )
 
+    def reset_shared_tensors(self):
+        self.shared_tensors = []
+
     @staticmethod
     def _produce_tensors(scope, tensors: Iterable[Tensor], body):
         for t in reversed(list(tensors)):
