@@ -273,9 +273,35 @@ class CUDANode2TIRParser(ISLNode2TIR):
             for i in range(1, len(bounds)):
                 anchors.append(anchors[-1] // extents[i])
 
+            def innermost():
+                body = self.parse(cur, cur_p)
+                if self.mark_stack[-1] == 'bind=threadIdx':
+                    tensors_from_host = []
+                    for i in self.shared_tensors:
+                        if self.has_side_effect and 'read' in i.access_types \
+                                or not self.has_side_effect and 'write' not in i.access_types:
+                            tensors_from_host.append(i)
+                    tensors_to_host = []
+                    for i in self.shared_tensors:
+                        if 'write' in i.access_types:
+                            tensors_to_host.append(i)
+                    stmts = []
+                    for i in tensors_from_host:
+                        stmts.append(i.build_copy_from_host(self.cuda_iter_var_table, self.iter_var_table))
+                    if tensors_from_host:
+                        stmts.append(tir.Evaluate(tir_sync('shared')))
+                    stmts.append(body)
+                    if tensors_to_host:
+                        stmts.append(tir.Evaluate(tir_sync('shared')))
+                    for i in tensors_to_host:
+                        stmts.append(i.build_copy_to_host(self.cuda_iter_var_table, self.iter_var_table))
+                    if len(stmts) >= 2:
+                        body = tir.SeqStmt(stmts)
+                return body
+
             def recur(num, axis_var):
                 if num >= len(bounds):
-                    return self.parse(cur, cur_p)
+                    return innermost()
                 c_var_name, lower, upper, step = bounds[num]
                 with self.iter_var_table.var(c_var_name) as c_var:
                     val = axis_var // anchors[num] % extents[num]
@@ -289,29 +315,6 @@ class CUDANode2TIRParser(ISLNode2TIR):
                     node=iter_var, attr_key='thread_extent', value=tir_imm(total),
                     body=recur(0, iter_var)
                 )
-
-            if self.mark_stack[-1] == 'bind=threadIdx':
-                tensors_from_host = []
-                for i in self.shared_tensors:
-                    if self.has_side_effect and 'read' in i.access_types \
-                            or not self.has_side_effect and 'write' not in i.access_types:
-                        tensors_from_host.append(i)
-                tensors_to_host = []
-                for i in self.shared_tensors:
-                    if 'write' in i.access_types:
-                        tensors_to_host.append(i)
-                stmts = []
-                for i in tensors_from_host:
-                    stmts.append(i.build_copy_from_host(self.cuda_iter_var_table, self.iter_var_table))
-                if tensors_from_host:
-                    stmts.append(tir.Evaluate(tir_sync('shared')))
-                stmts.append(body)
-                if tensors_to_host:
-                    stmts.append(tir.Evaluate(tir_sync('shared')))
-                for i in tensors_to_host:
-                    stmts.append(i.build_copy_to_host(self.cuda_iter_var_table, self.iter_var_table))
-                if len(stmts) >= 2:
-                    body = tir.SeqStmt(stmts)
 
             return body
         return super().parse_for(node, parent)
