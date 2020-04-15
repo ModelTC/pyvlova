@@ -152,7 +152,7 @@ class BlockTensorUsage(Tensor):
         # noinspection PyUnreachableCode
         num_threads = cuda_var_table.axis_extent['threadIdx']
         idx = cuda_var_table.axis_idx['threadIdx']
-        total = reduce(int.__mul__, self.extent(True))
+        total = reduce(tir.Mul, self.extent(True))
         with iter_var_table.var() as iter_var, iter_var_table.var() as extent_var:
             # noinspection PyTypeChecker
             body = tir.For(
@@ -303,10 +303,9 @@ def gpu_find_sharable_tensors(tree, statements, tensors, max_shared_memory=None)
     shared_total_usage = 0
     for i in usages:
         name = i.origin.name
-        bytes_usage = -(-i.size_in_bytes // 32) * 32
-        if bytes_usage * 2 >= access_count[name]:
+        bytes_usage = i.size_in_bytes
+        if bytes_usage * 8 >= access_count[name]:
             continue
-        bytes_usage = -(-bytes_usage // 32) * 32
         if bytes_usage + shared_total_usage > max_shared_memory:
             break
         shared_total_usage += bytes_usage
