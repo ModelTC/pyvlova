@@ -200,19 +200,19 @@ model = resnet18()
 import tvm
 import numpy
 from pyvlova.op.base import calc_mode
-ctx = tvm.cpu()
-x = tvm.nd.array(numpy.random.random((1, 3, 224, 224)).astype('float32'), ctx=ctx)
-with calc_mode.under('tvm_llvm_timing'):
-    model.imp()
-    out = model.calc(x)
+# ctx = tvm.cpu()
+# x = tvm.nd.array(numpy.random.random((1, 3, 224, 224)).astype('float32'), ctx=ctx)
+# with calc_mode.under('tvm_llvm_timing'):
+#     model.imp()
+#     out = model.calc(x)
 ctx = tvm.gpu()
 x = tvm.nd.array(numpy.random.random((1, 3, 224, 224)).astype('float32'), ctx=ctx)
 with calc_mode.under('tvm_cuda_timing'):
-    # model.imp(tune_kwargs={'n_trial': 200})
+    model.imp(tune_kwargs={'n_trial': 400})
     model.imp(tune_kwargs={'n_trial': 0})
     out_a = model.calc(x)
 with calc_mode.under('tvm_topi_cuda_timing'):
-    # model.imp(tune_kwargs={'n_trial': 200})
+    model.imp(tune_kwargs={'n_trial': 400})
     model.imp(tune_kwargs={'n_trial': 0})
     out_b = model.calc(x)
 tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 1e-3)

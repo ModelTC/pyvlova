@@ -6,7 +6,7 @@ import numpy
 from tvm import autotvm
 
 from pyvlova.autotune.builder import PolyLocalBuilder
-from pyvlova.autotune.settings import default_eval_settings, cuda_settings
+from pyvlova.autotune.settings import default_tune_eval_settings, cuda_settings
 from pyvlova.codegen.isl_to_tir import build_tvm_stmts, CUDANode2TIRParser
 from pyvlova.poly.gpu import gpu_tile
 from pyvlova.poly.schedule_tree.tree import ScheduleTree
@@ -206,7 +206,7 @@ def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
             n_trial=n_trial,
             measure_option={
                 'builder': builder or PolyLocalBuilder(),
-                'runner': runner or autotvm.LocalRunner(timeout=20, **default_eval_settings),
+                'runner': runner or autotvm.LocalRunner(timeout=20, **default_tune_eval_settings),
             },
             callbacks=[
                 autotvm.callback.progress_bar(n_trial, prefix=f'GPUTile {name}'),

@@ -144,15 +144,17 @@ class Conv2d(CombinedOp):
         return x
 
 
+'''
 import tvm
 import numpy
 from .base import calc_mode
 ctx = tvm.gpu()
-x = tvm.nd.array(numpy.random.random((1, 3, 224, 224)).astype('float32'), ctx=ctx)
+x = tvm.nd.array(numpy.random.random((8, 3, 224, 224)).astype('float32'), ctx=ctx)
 import torch
 tconv1 = torch.nn.Conv2d(3, 64, 7, 2, 3, True)
 out_t = tconv1(torch.tensor(x.asnumpy())).detach().cpu().numpy()
 conv1 = Conv2d(
+    batch=8,
     in_channel=3, in_height=224, in_width=224,
     out_channel=64, kernel_height=7, kernel_width=7,
     stride_height=2, stride_width=2,
@@ -170,3 +172,4 @@ with calc_mode.under('tvm_topi_cuda_timing'):
 tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 0.5, 1e-3)
 tvm.testing.assert_allclose(out_a.asnumpy(), out_t, 0.5, 1e-3)
 tvm.testing.assert_allclose(out_b.asnumpy(), out_t, 0.5, 1e-3)
+'''

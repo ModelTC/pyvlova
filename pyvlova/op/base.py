@@ -6,7 +6,7 @@ import tvm
 from tvm import autotvm
 
 from pyvlova.autotune.gpu import tune_gpu_tile
-from pyvlova.autotune.settings import default_eval_settings
+from pyvlova.autotune.settings import default_tune_eval_settings, default_timing_eval_settings
 from pyvlova.codegen.isl_to_tir import CUDANode2TIRParser, ISLNode2TIR, build_tvm_stmts
 from pyvlova.poly.gpu import gpu_tile, gpu_find_sharable_tensors
 from pyvlova.poly.poly import TensorTable, Statement, Tensor
@@ -186,7 +186,6 @@ class PolyTVMOp(PolyOp):
         tree = self.schedule.copy()
         gpu_tile(tree, tile_size)
         stmts, tensors = build_tvm_stmts(name, tree, parser, te_tensors=te_tensors)
-        print(stmts)
         assert all((i.name == j.name for i, j in zip(te_tensors, tensors)))
         with tvm.target.create('cuda'):
             func = tvm.build(stmts, name=name)
@@ -222,7 +221,7 @@ class PolyTVMOp(PolyOp):
                         if isinstance(i, tvm.nd.NDArray):
                             ctx = i.ctx
                             break
-                    evaluator = func.time_evaluator(func.entry_name, ctx, **default_eval_settings)
+                    evaluator = func.time_evaluator(func.entry_name, ctx, **default_timing_eval_settings)
                     t = evaluator(*t_args, **t_kwargs).mean
                     print(self.name, 'tvm timing', target, '%.9f us' % (t * 1e6))
                     timing.t = t
@@ -253,7 +252,7 @@ class PolyTVMOp(PolyOp):
                 n_trial=n_trial,
                 measure_option={
                     'builder': tune_kwargs.get('builder', autotvm.LocalBuilder()),
-                    'runner': tune_kwargs.get('runner', autotvm.LocalRunner(timeout=20, **default_eval_settings)),
+                    'runner': tune_kwargs.get('runner', autotvm.LocalRunner(timeout=20, **default_tune_eval_settings)),
                 },
                 callbacks=[
                     autotvm.callback.progress_bar(n_trial, prefix=f'TOPI {name}'),
