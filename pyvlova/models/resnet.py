@@ -196,6 +196,7 @@ def resnet18(**kwargs):
 
 
 model = resnet18()
+model_2 = resnet18()
 
 import tvm
 import numpy
@@ -207,12 +208,14 @@ from pyvlova.op.base import calc_mode
 #     out = model.calc(x)
 ctx = tvm.gpu()
 x = tvm.nd.array(numpy.random.random((1, 3, 224, 224)).astype('float32'), ctx=ctx)
+n = 1000
 with calc_mode.under('tvm_cuda_timing'):
-    model.imp(tune_kwargs={'n_trial': 400})
-    model.imp(tune_kwargs={'n_trial': 0})
+    model_2.imp(do_shared_opt=False, tune_kwargs={'n_trial': n})
+    out_c = model.calc(x)
+with calc_mode.under('tvm_cuda_timing'):
+    model.imp(do_shared_opt=True, tune_kwargs={'n_trial': n})
     out_a = model.calc(x)
 with calc_mode.under('tvm_topi_cuda_timing'):
-    model.imp(tune_kwargs={'n_trial': 400})
-    model.imp(tune_kwargs={'n_trial': 0})
+    model.imp(tune_kwargs={'n_trial': 1000})
     out_b = model.calc(x)
 tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 1e-3)

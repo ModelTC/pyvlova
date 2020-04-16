@@ -164,7 +164,7 @@ conv1 = Conv2d(
 conv1.weight = tconv1.weight.detach().cpu().numpy()
 conv1.bias = tconv1.bias.detach().cpu().numpy()
 with calc_mode.under('tvm_cuda_timing'):
-    conv1.imp(tune_kwargs={'n_trial': 80})
+    conv1.imp(do_shared_opt=False, tune_kwargs={'n_trial': 80})
     out_a = conv1.calc(x)
 with calc_mode.under('tvm_topi_cuda_timing'):
     conv1.imp(tune_kwargs={'n_trial': 80})

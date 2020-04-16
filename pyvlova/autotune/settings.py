@@ -1,6 +1,6 @@
 default_tune_eval_settings = {
     'repeat': 2,
-    'number': 8,
+    'number': 4,
     'min_repeat_ms': 0,
 }
 

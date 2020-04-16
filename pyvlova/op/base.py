@@ -173,13 +173,13 @@ class PolyTVMOp(PolyOp):
         self._imp['tvm_llvm'] = (func, arg_map)
         return func
 
-    def imp_tvm_cuda(self, tile_size=None, te_tensors=None, tune_kwargs=None):
+    def imp_tvm_cuda(self, tile_size=None, te_tensors=None, do_shared_opt=True, tune_kwargs=None):
         if te_tensors is None:
             te_tensors = [i.te_tensor for i in self.tensors]
         for i in te_tensors:
             assert i.name in self.tensors
         name = self.name + '_tvm_cuda'
-        parser = self.get_parser(factory=CUDANode2TIRParser)
+        parser = self.get_parser(factory=CUDANode2TIRParser, do_shared_opt=do_shared_opt)
         if tile_size is None:
             # noinspection PyTypeChecker
             tile_size, _ = tune_gpu_tile(name, self.schedule, parser, **(tune_kwargs or {}))

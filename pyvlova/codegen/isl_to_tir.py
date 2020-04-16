@@ -195,11 +195,13 @@ class ISLNode2TIR(ISLNodeParser):
 
 
 class CUDANode2TIRParser(ISLNode2TIR):
-    def __init__(self, cuda_iter_var_table=None, shared_tensors=None, has_side_effect=False, **kwargs):
+    def __init__(self, cuda_iter_var_table=None, shared_tensors=None,
+                 has_side_effect=False, do_shared_opt=True, **kwargs):
         super().__init__(**kwargs)
         self.cuda_iter_var_table: CUDAIterVarTable = cuda_iter_var_table or CUDAIterVarTable()
         self.shared_tensors = shared_tensors or []
         self.has_side_effect = has_side_effect
+        self.do_shared_opt = do_shared_opt
 
     def gen_shared_tensors(self, tree, **kwargs):
         self.shared_tensors = gpu_find_sharable_tensors(
@@ -218,7 +220,10 @@ class CUDANode2TIRParser(ISLNode2TIR):
     def parse(self, node, parent=None):
         if parent is None:
             if isinstance(node, ScheduleTree):
-                self.gen_shared_tensors(node)
+                if self.do_shared_opt:
+                    self.gen_shared_tensors(node)
+                else:
+                    self.reset_shared_tensors()
             body = super().parse(node, parent)
             write_tensors = set()
             for i in self.stmt_table.values():
@@ -236,12 +241,12 @@ class CUDANode2TIRParser(ISLNode2TIR):
         mark = node.id().name()
 
         def _build_body():
-            body = super(CUDANode2TIRParser, self).parse_mark(node, parent)
+            b = super(CUDANode2TIRParser, self).parse_mark(node, parent)
             if mark.startswith('bind=') and not isinstance(node.node(), isl.ast_node_for):
                 _, axis = mark.rsplit('=', 1)
                 with self.cuda_iter_var_table.axis(axis, 1) as iter_var:
-                    body = tir.AttrStmt(node=iter_var, attr_key='thread_extent', value=tir_imm(1), body=body)
-            return body
+                    b = tir.AttrStmt(node=iter_var, attr_key='thread_extent', value=tir_imm(1), body=b)
+            return b
 
         if mark == 'bind=threadIdx' and mark not in self.mark_stack:
             def _under_shared(ith):
@@ -269,12 +274,13 @@ class CUDANode2TIRParser(ISLNode2TIR):
                 cur, cur_p = cur.body(), cur
             extents = [(upper - lower) // step for _, lower, upper, step in bounds]
             total = reduce(lambda x, y: x * y, extents)
+            # noinspection PyUnresolvedReferences
             total = tir.ir_pass.Simplify(total)
             assert str(total).isdigit()
             total = int(str(total))
             anchors = [total // extents[0]]
-            for i in range(1, len(bounds)):
-                anchors.append(anchors[-1] // extents[i])
+            for idx in range(1, len(bounds)):
+                anchors.append(anchors[-1] // extents[idx])
 
             def innermost():
                 body = self.parse(cur, cur_p)
@@ -314,12 +320,10 @@ class CUDANode2TIRParser(ISLNode2TIR):
                     )
 
             with self.cuda_iter_var_table.axis(axis, total) as iter_var:
-                body = tir.AttrStmt(
+                return tir.AttrStmt(
                     node=iter_var, attr_key='thread_extent', value=tir_imm(total),
                     body=recur(0, iter_var)
                 )
-
-            return body
         return super().parse_for(node, parent)
 
 
