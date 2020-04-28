@@ -53,6 +53,8 @@ class UnaryElementwise(ArgumentedOp):
     def topi_cuda_args(self, x=None, out=None):
         return [x]
 
+    topi_cuda_schedule_func = topi.cuda.schedule_elemwise
+
 
 class ReLU(UnaryElementwise):
     @staticmethod
@@ -71,7 +73,25 @@ class ReLU(UnaryElementwise):
         return res
 
     topi_cuda_calc_func = topi.nn.relu
-    topi_cuda_schedule_func = topi.cuda.schedule_elemwise
+
+
+class ReLU6(UnaryElementwise):
+    @staticmethod
+    def statements_factory(**_):
+        def stmt(t, n, c, h, w):
+            if trace_mode.mode == 'tvm':
+                t['out'][n, c, h, w] = te.max(te.min(t['x'][n, c, h, w], tir_imm(6.0)), tir_imm(0.0))
+            elif trace_mode.mode == 'tensor_access':
+                t['out'][n, c, h, w] = t['x'][n, c, h, w]
+            else:
+                t['out'][n, c, h, w] = max(min(t['x'][n, c, h, w], 6.0), 0.0)
+
+        res = {}
+        for i in [stmt]:
+            res[i.__name__] = Statement.from_calc(i)
+        return res
+
+    topi_cuda_calc_func = lambda x: topi.maximum(topi.minimum(x, tir_imm(6.0)), tir_imm(0.0))
 
 
 '''

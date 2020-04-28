@@ -98,6 +98,9 @@ class ISLExpr2TIR(ISLExprParser):
     def parse_op_fdiv_q(self, expr, parent):
         return tir.FloorDiv(self.parse(expr.arg(0), expr), self.parse(expr.arg(1), expr))
 
+    def parse_op_pdiv_r(self, expr, parent):
+        return tir.Mod(self.parse(expr.arg(0), expr), self.parse(expr.arg(1), expr))
+
     def parse_op_min(self, expr, parent):
         return tir.Min(self.parse(expr.arg(0), expr), self.parse(expr.arg(1), expr))
 

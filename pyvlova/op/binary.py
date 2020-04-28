@@ -32,6 +32,8 @@ class BinaryElementwise(ArgumentedOp):
     def topi_cuda_args(self, x=None, y=None, out=None):
         return [x, y]
 
+    topi_cuda_schedule_func = topi.cuda.schedule_elemwise
+
 
 class ElementwiseAdd(BinaryElementwise):
     @staticmethod
@@ -42,7 +44,6 @@ class ElementwiseAdd(BinaryElementwise):
         return [stmt]
 
     topi_cuda_calc_func = topi.add
-    topi_cuda_schedule_func = topi.cuda.schedule_elemwise
 
 
 class BinaryChannelwise(BinaryElementwise):
@@ -69,7 +70,6 @@ class ChannelwiseAdd(BinaryChannelwise):
     @staticmethod
     def topi_cuda_calc_func(channel, x, y):
         return topi.add(x, topi.reshape(y, (channel, 1, 1)))
-    topi_cuda_schedule_func = topi.cuda.schedule_elemwise
 
 
 '''
