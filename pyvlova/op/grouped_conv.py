@@ -5,15 +5,14 @@ from pyvlova.poly.schedule_tree.tree import ScheduleTree
 from ..poly.poly import TensorTable, Statement
 
 
-def schedule(in_group_size, out_group_size, **kwargs):
+def schedule(**kwargs):
     init_t = 'stmt_init[n, c, h, w]'
     calc_t = 'stmt_calc[n, c, h, w, i, j, k]'
     output_constraints = '0 <= n < batch and 0 <= c < out_channel ' \
                          'and 0 <= h < out_height and 0 <= w < out_width'
-    calc_constraints = '0 <= i < in_channel and 0 <= j < kernel_height and 0 <= k < kernel_width ' \
-                       f'and floor(i / {in_group_size}) = floor(c / {out_group_size})'
+    calc_constraints = '0 <= i < in_group_size and 0 <= j < kernel_height and 0 <= k < kernel_width'
     domain = '[batch, in_channel, in_height, in_width, out_channel, out_height, out_width, ' \
-             'kernel_height, kernel_width] -> {' \
+             'kernel_height, kernel_width, in_group_size] -> {' \
              f'{init_t}: {output_constraints}; ' \
              f'{calc_t}: {output_constraints} and {calc_constraints}' \
              '}'
@@ -50,14 +49,15 @@ def tensors(batch=1, in_channel=1, in_height=1, in_width=1, out_channel=1,
     return table
 
 
-def statements(stride_height=1, stride_width=1, in_group_size=1, **_):
+def statements(stride_height=1, stride_width=1, in_group_size=1, out_group_size=1, **_):
     def stmt_init(t, n, c, h, w):
         t['out'][n, c, h, w] = 0.0
 
     def stmt_calc(t, n, c, h, w, i, j, k):
+        in_offset = c // out_group_size * in_group_size
         t['out'][n, c, h, w] = t['out'][n, c, h, w] \
-                               + t['x'][n, i, h * stride_height + j, w * stride_width + k] \
-                               * t['weight'][c, i % in_group_size, j, k]
+                               + t['x'][n, i + in_offset, h * stride_height + j, w * stride_width + k] \
+                               * t['weight'][c, i, j, k]
 
     res = {}
     for f in [stmt_init, stmt_calc]:
@@ -93,14 +93,13 @@ class GroupedConv2d(Conv2d):
         self._ops[op_idx] = self.conv
 
 
-'''
 import tvm
 import numpy
 from .base import calc_mode
 ctx = tvm.gpu()
 x = tvm.nd.array(numpy.random.random((8, 64, 24, 24)).astype('float32'), ctx=ctx)
 import torch
-tconv1 = torch.nn.Conv2d(64, 32, 7, 2, 3, True, groups=4)
+tconv1 = torch.nn.Conv2d(64, 32, 7, 2, 3, True, groups=32)
 out_t = tconv1(torch.tensor(x.asnumpy())).detach().cpu().numpy()
 conv1 = GroupedConv2d(
     batch=8,
@@ -108,17 +107,16 @@ conv1 = GroupedConv2d(
     out_channel=32, kernel_height=7, kernel_width=7,
     stride_height=2, stride_width=2,
     pad_top=3, pad_bottom=3, pad_left=3, pad_right=3,
-    biased=True, groups=4, name='conv1'
+    biased=True, groups=32, name='conv1'
 )
 conv1.weight = tconv1.weight.detach().cpu().numpy()
 conv1.bias = tconv1.bias.detach().cpu().numpy()
 with calc_mode.under('tvm_cuda_timing'):
-    conv1.imp(do_shared_opt=False, tune_kwargs={'n_trial': 80})
+    conv1.imp(do_shared_opt=True, tune_kwargs={'n_trial': 8})
     out_a = conv1.calc(x)
 with calc_mode.under('tvm_topi_cuda_timing'):
-    conv1.imp(tune_kwargs={'n_trial': 80})
+    conv1.imp(tune_kwargs={'n_trial': 8})
     out_b = conv1.calc(x)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 0.5, 1e-3)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_t, 0.5, 1e-3)
-tvm.testing.assert_allclose(out_b.asnumpy(), out_t, 0.5, 1e-3)
-'''
+tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 0.01, 1e-3)
+tvm.testing.assert_allclose(out_a.asnumpy(), out_t, 0.01, 1e-3)
+tvm.testing.assert_allclose(out_b.asnumpy(), out_t, 0.01, 1e-3)

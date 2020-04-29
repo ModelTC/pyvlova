@@ -169,7 +169,7 @@ from pyvlova.op.base import calc_mode
 #     out = model.calc(x)
 ctx = tvm.gpu()
 x = tvm.nd.array(numpy.random.random((1, 3, 224, 224)).astype('float32'), ctx=ctx)
-n = 80
+n = 8
 # with calc_mode.under('tvm_cuda_timing'):
 #     model_2.imp(do_shared_opt=False, tune_kwargs={'n_trial': n})
 #     out_c = model.calc(x)

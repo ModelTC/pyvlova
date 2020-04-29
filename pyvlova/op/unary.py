@@ -109,3 +109,16 @@ with calc_mode.under('tvm_topi_cuda_timing'):
     out_b = elewise_add.calc(x)
 tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy())
 '''
+import tvm
+import numpy
+from .base import calc_mode
+ctx = tvm.gpu()
+x = tvm.nd.array((numpy.random.random((1, 64, 224, 224)) * 100).astype('float32'), ctx=ctx)
+elewise_add = ReLU6(channel=64, height=224, width=224)
+with calc_mode.under('tvm_cuda_timing'):
+    elewise_add.imp(tune_kwargs={'n_trial': 1})
+    out_a = elewise_add.calc(x)
+with calc_mode.under('tvm_topi_cuda_timing'):
+    elewise_add.imp(tune_kwargs={'n_trial': 1})
+    out_b = elewise_add.calc(x)
+tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy())
