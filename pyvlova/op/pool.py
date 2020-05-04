@@ -14,9 +14,15 @@ def schedule(**kwargs):
     output_constraints = '0 <= n < batch and 0 <= c < channel ' \
                          'and 0 <= h < out_height and 0 <= w < out_width'
     calc_constraints = '0 <= i < kernel_height and 0 <= j < kernel_width'
+
+    avg_div_t = 'stmt_div[n, c, h, w, i, j]'
+    avg_div_d = f'{avg_div_t}: {output_constraints}; ' if kwargs['pool_type'] == 'avg' else ''
+    avg_div_filter = f'- filter: "{{{avg_div_t}}}"' if kwargs['pool_type'] == 'avg' else ''
+
     domain = '[batch, channel, in_height, in_width, out_height, out_width, ' \
              'kernel_height, kernel_width] -> {' \
              f'{init_t}: {output_constraints}; ' \
+             f'{avg_div_d}' \
              f'{calc_t}: {output_constraints} and {calc_constraints}' \
              '}'
     outer_schedule = '[%s]' % ', '.join(map(
@@ -38,6 +44,7 @@ def schedule(**kwargs):
                     schedule: "{inner_schedule}"
                     permutable: 1
                     coincident: [1, 1]
+              {avg_div_filter}
     ''')
     tree.apply_params(**dict(filter(lambda x: isinstance(x[1], int), kwargs.items())))
     return tree
@@ -67,7 +74,7 @@ def statements(stride_height=1, stride_width=1, kernel_height=1, kernel_width=1,
                                        + t['x'][n, c, h * stride_height + i, w * stride_width + j] \
                                        / tir_imm(float(kernel_height * kernel_width))
         elif trace_mode.mode == 'tensor_access':
-            t['out'][n, c, h, w] = t['x'][n, c, h, w]
+            t['out'][n, c, h, w] = t['x'][n, c, h * stride_height + i, w * stride_width + j]
         else:
             if pool_type == 'max':
                 t['out'][n, c, h, w] = max(t['x'][n, c, h, w],
@@ -77,9 +84,21 @@ def statements(stride_height=1, stride_width=1, kernel_height=1, kernel_width=1,
                                        + t['x'][n, c, h * stride_height + i, w * stride_width + j] \
                                        / float(kernel_height * kernel_width)
 
+    def stmt_div(t, n, c, h, w):
+        if pool_type != 'avg':
+            return
+        if trace_mode.mode == 'tvm':
+            t['out'][n, c, h, w] = t['out'][n, c, h, w] / tir_imm(float(kernel_height * kernel_width))
+        elif trace_mode.mode == 'tensor_access':
+            t['out'][n, c, h, w] = t['out'][n, c, h, w]
+        else:
+            t['out'][n, c, h, w] = t['out'][n, c, h, w] / float(kernel_height * kernel_width)
+
     res = {}
     for f in [stmt_init, stmt_calc]:
         res[f.__name__] = Statement.from_calc(f)
+    if pool_type == 'avg':
+        res['stmt_div'] = Statement.from_calc(stmt_div)
     return res
 
 

@@ -1,6 +1,4 @@
 from pyvlova.models.utils import *
-import torchvision
-import torch.nn as nn
 
 from pyvlova.op.base import CombinedOp, SequenceOp
 from pyvlova.op.binary import ElementwiseAdd
@@ -53,29 +51,29 @@ class InvertedResidual(CombinedOp):
         self.use_res_connect = self.stride == 1 and input_channel == out_channel
 
         if expand_ratio != 1:
-            self.first_layer = Conv2dReLU6(name + '.first_layer', in_shape, hidden_dim, kernel_size=1)
-            self.conv2drelu6 = Conv2dReLU6(name + '.conv2drelu6', self.first_layer, hidden_dim,
-                                           stride=stride, groups=hidden_dim)
+            self.conv0 = Conv2dReLU6(name + '.conv0', in_shape, hidden_dim, kernel_size=1)
+            self.conv1 = Conv2dReLU6(name + '.conv1', self.conv0, hidden_dim,
+                                     stride=stride, groups=hidden_dim)
         else:
-            self.conv2drelu6 = Conv2dReLU6(name + '.conv2drelu6', in_shape, hidden_dim,
-                                           stride=stride, groups=hidden_dim)
-        self.conv = conv(name + '.conv', self.conv2drelu6, out_channel, 1, stride=1, pad=0, biased=False)
-        self.batch = self.conv.batch
-        self.out_channel = self.conv.out_channel
-        self.out_height = self.conv.out_height
-        self.out_width = self.conv.out_width
+            self.conv1 = Conv2dReLU6(name + '.conv1', in_shape, hidden_dim,
+                                     stride=stride, groups=hidden_dim)
+        self.conv2 = conv(name + '.conv2', self.conv1, out_channel, 1, stride=1, pad=0, biased=False)
+        self.batch = self.conv2.batch
+        self.out_channel = self.conv2.out_channel
+        self.out_height = self.conv2.out_height
+        self.out_width = self.conv2.out_width
         if self.use_res_connect:
-            self.eltwise_add = mock(ElementwiseAdd, name + '.eltwise_add', self.conv)
+            self.eltwise_add = mock(ElementwiseAdd, name + '.eltwise_add', self.conv2)
         ops = [v for v in self.__dict__.values() if isinstance(v, BaseOp)]
         super().__init__(name=name, ops=ops)
 
     def calc(self, x):
         if self.expand_ratio != 1:
-            out = self.first_layer.calc(x)
-            out = self.conv2drelu6.calc(out)
+            out = self.conv0.calc(x)
+            out = self.conv1.calc(out)
         else:
-            out = self.conv2drelu6.calc(x)
-        out = self.conv.calc(out)
+            out = self.conv1.calc(x)
+        out = self.conv2.calc(out)
         if self.use_res_connect:
             return self.eltwise_add.calc(x, out)
         else:
@@ -128,11 +126,11 @@ class MobileNetV2(CombinedOp):
         features.append(Conv2dReLU6(name + f'.features[{len(features)}]',
                                     features[-1], self.last_channel, kernel_size=1))
         # make it nn.Sequential
-        self.features = SequenceOp(name='.features', ops=features)
+        self.features = SequenceOp(name=name + '.features', ops=features)
 
         # building classifier
-        self.avgpool = pool(name + '.avgpool', self.features, 7, 1, 0, 'avg')
-        self.flatten = flatten2d(name + '.flatten', self.avgpool)
+        self.pool = adaptive_pool(name + '.pool', self.features, 1, 1, 'avg')
+        self.flatten = flatten2d(name + '.flatten', self.pool)
         self.fc = Linear(
             batch=self.flatten.batch, in_channel=self.last_channel,
             out_channel=num_classes, biased=True,
@@ -140,14 +138,18 @@ class MobileNetV2(CombinedOp):
         )
 
         ops = [v for v in self.__dict__.values() if isinstance(v, BaseOp)]
+
         super().__init__(name=name, ops=ops)
 
     def _forward_impl(self, x):
         # This exists since TorchScript doesn't support inheritance, so the superclass method
         # (this one) needs to have a name other than `forward` that can be accessed in a subclass
         x = self.features.calc(x)
-        x = self.avgpool.calc(x)
+        print('1', x.asnumpy().mean())
+        x = self.pool.calc(x)
+        print('2', x.asnumpy().mean())
         x = self.flatten.calc(x)
+        print('3', x.asnumpy().mean())
         x = self.fc.calc(x)
         return x
 
@@ -169,7 +171,7 @@ from pyvlova.op.base import calc_mode
 #     out = model.calc(x)
 ctx = tvm.gpu()
 x = tvm.nd.array(numpy.random.random((1, 3, 224, 224)).astype('float32'), ctx=ctx)
-n = 8
+n = 80
 # with calc_mode.under('tvm_cuda_timing'):
 #     model_2.imp(do_shared_opt=False, tune_kwargs={'n_trial': n})
 #     out_c = model.calc(x)

@@ -108,7 +108,6 @@ with calc_mode.under('tvm_topi_cuda_timing'):
     elewise_add.imp(tune_kwargs={'n_trial': 1})
     out_b = elewise_add.calc(x)
 tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy())
-'''
 import tvm
 import numpy
 from .base import calc_mode
@@ -122,3 +121,4 @@ with calc_mode.under('tvm_topi_cuda_timing'):
     elewise_add.imp(tune_kwargs={'n_trial': 1})
     out_b = elewise_add.calc(x)
 tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy())
+'''

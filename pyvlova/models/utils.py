@@ -2,7 +2,7 @@ from pyvlova.op.base import BaseOp
 from pyvlova.op.conv import Conv2d
 from pyvlova.op.flatten import Flatten2d
 from pyvlova.op.grouped_conv import GroupedConv2d
-from pyvlova.op.pool import Pool
+from pyvlova.op.pool import Pool, AdaptivePool
 
 
 def shape2d(in_shape):
@@ -25,6 +25,15 @@ def pool(name, in_shape, kernel, stride, pad, pool_type):
         kernel_height=kernel, kernel_width=kernel,
         stride_height=stride, stride_width=stride,
         pad_top=pad, pad_bottom=pad, pad_left=pad, pad_right=pad,
+        name=name, pool_type=pool_type
+    )
+
+
+def adaptive_pool(name, in_shape, out_height, out_width, pool_type):
+    in_shape = shape2d(in_shape)
+    return AdaptivePool(
+        batch=in_shape[0], channel=in_shape[1], in_height=in_shape[2], in_width=in_shape[3],
+        out_height=out_height, out_width=out_width,
         name=name, pool_type=pool_type
     )
 

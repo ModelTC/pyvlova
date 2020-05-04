@@ -93,6 +93,7 @@ class GroupedConv2d(Conv2d):
         self._ops[op_idx] = self.conv
 
 
+'''
 import tvm
 import numpy
 from .base import calc_mode
@@ -120,3 +121,4 @@ with calc_mode.under('tvm_topi_cuda_timing'):
 tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 0.01, 1e-3)
 tvm.testing.assert_allclose(out_a.asnumpy(), out_t, 0.01, 1e-3)
 tvm.testing.assert_allclose(out_b.asnumpy(), out_t, 0.01, 1e-3)
+'''
