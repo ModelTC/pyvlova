@@ -2,15 +2,13 @@ from collections import defaultdict
 from functools import reduce
 
 import isl
-import tvm
 from tvm import tir
 
 from pyvlova.autotune.settings import cuda_settings
 from pyvlova.poly.poly import Tensor, CUDAIterVarTable, IterVarTable, Statement, record_effective_op
-from pyvlova.poly.schedule_tree.node import DomainNode, ExtensionNode, SequenceNode, FilterNode, MarkNode, \
+from pyvlova.poly.schedule_tree.node import SequenceNode, FilterNode, MarkNode, \
     NodeWithSingleChild
-from pyvlova.utils import get_unnamed_tuples, tir_load, tir_imm, tir_store, structure_unnamed_fixed_box, \
-    map_out_constant_dim, tir_sync
+from pyvlova.utils import tir_load, tir_imm, tir_store, structure_unnamed_fixed_box
 
 
 def gpu_tile(tree, tile_size, permutation=None):
@@ -22,40 +20,56 @@ def gpu_tile(tree, tile_size, permutation=None):
     real_tile_size = [tile_size[i] * strides[i] for i in range(n)]
     filled_box_size = [-(-box_size[i] // (real_tile_size[i])) * real_tile_size[i] for i in range(n)]
 
-    thread_fake_args = ['i%d' % i for i in range(n)]
+    fake_args = ['i%d' % i for i in range(n)]
+
     thread_fake_constraints = [
         f'({i} mod {stride}) = (({lower}) mod {stride})'
         f' and 0 <= {i} - ({lower}) < {size}'
         for i, lower, stride, size in
-        zip(thread_fake_args, lowers, strides, filled_box_size)
+        zip(fake_args, lowers, strides, filled_box_size)
     ]
-    thread_fake_named_tuple = f'_thread[{", ".join(thread_fake_args)}]'
+    thread_fake_named_tuple = f'_thread[{", ".join(fake_args)}]'
     thread_fake_statement = isl.union_set(
         f'{{ {thread_fake_named_tuple} : {" and ".join(thread_fake_constraints)} }}'
     ).coalesce()
 
+    block_fake_constraints = [
+        f'({i} mod {stride}) = (({lower}) mod {stride})'
+        f' and 0 <= {i} - ({lower}) < {size}'
+        f' and ({i} mod ({rt_size})) = (({lower}) mod ({rt_size}))'
+        for i, lower, stride, size, rt_size in
+        zip(fake_args, lowers, strides, filled_box_size, real_tile_size)
+    ]
+    block_fake_named_tuple = f'_block[{", ".join(fake_args)}]'
+    block_fake_statement = isl.union_set(
+        f'{{ {block_fake_named_tuple} : {" and ".join(block_fake_constraints)} }}'
+    ).coalesce()
+
     old_domain = tree.domain()
-    if isinstance(tree.root, DomainNode):
-        tree.root.domain = tree.root.domain.union(thread_fake_statement)
-    elif isinstance(tree.root, ExtensionNode):
-        tree.root.extension = tree.root.extension.union(
-            isl.union_map.from_range(thread_fake_statement))
-    else:
-        assert False
+    tree.add_to_domain(thread_fake_statement)
+    tree.add_to_domain(block_fake_statement)
 
     band = tree.outermost_band()
 
     for i in range(n):
         s = band.schedule.at(i).union_add(
-            isl.pw_aff(f'{{ {thread_fake_named_tuple} -> [({thread_fake_args[i]})] }}'))
+            isl.pw_aff(f'{{ {thread_fake_named_tuple} -> [({fake_args[i]})] }}'))
+        band.schedule = band.schedule.set_at(i, s.coalesce())
+        s = band.schedule.at(i).union_add(
+            isl.pw_aff(f'{{ {block_fake_named_tuple} -> [({fake_args[i]})] }}'))
         band.schedule = band.schedule.set_at(i, s.coalesce())
 
-    thread_fake_branch = SequenceNode()
-    thread_fake_branch.add_child(FilterNode(filter='{%s}' % thread_fake_named_tuple))
-    old_branch = thread_fake_branch.add_child(FilterNode(filter=old_domain))
+    fake_branch = SequenceNode()
+    fake_branch.add_child(FilterNode(filter='{%s}' % thread_fake_named_tuple))
+    fake_branch.add_child(FilterNode(filter='{%s}' % block_fake_named_tuple))
+
+    kernel_branch = MarkNode('clear(bind)')
+    kernel_branch.child = FilterNode(filter=old_domain)
     if band.child:
-        old_branch.child = band.child
-    band.child = thread_fake_branch
+        kernel_branch.child.child = band.child
+    fake_branch.add_child(kernel_branch)
+
+    band.child = fake_branch
 
     if permutation is not None:
         band.permute(*permutation)
@@ -65,8 +79,6 @@ def gpu_tile(tree, tile_size, permutation=None):
     band.insert_before(MarkNode('bind=blockIdx'))
     child = band.child
     child.insert_before(MarkNode('bind=threadIdx'))
-    kernel = child.child
-    kernel.insert_before(MarkNode('clear(bind)'))
 
 
 class BlockTensorUsage(Tensor):

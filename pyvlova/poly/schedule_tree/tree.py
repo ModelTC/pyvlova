@@ -79,6 +79,15 @@ class ScheduleTree(object):
     def apply_params(self, *args, **kwargs):
         return self.root.apply_params(*args, **kwargs)
 
+    def add_to_domain(self, uset):
+        if isinstance(self.root, DomainNode):
+            self.root.domain = self.root.domain.union(uset)
+        elif isinstance(self.root, ExtensionNode):
+            self.root.extension = self.root.extension.union(
+                isl.union_map.from_range(uset))
+        else:
+            assert False
+
 
 """
 example_tree = ScheduleTree.from_yaml('''
