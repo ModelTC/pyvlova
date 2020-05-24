@@ -8,16 +8,24 @@ from pyvlova.poly.schedule_tree.tree import ScheduleTree
 from pyvlova.utils import tir_imm
 
 
-def schedule(**kwargs):
+def schedule(pool_type='', **kwargs):
     init_t = 'stmt_init[n, c, h, w]'
     calc_t = 'stmt_calc[n, c, h, w, i, j]'
     output_constraints = '0 <= n < batch and 0 <= c < channel ' \
                          'and 0 <= h < out_height and 0 <= w < out_width'
     calc_constraints = '0 <= i < kernel_height and 0 <= j < kernel_width'
 
-    avg_div_t = 'stmt_div[n, c, h, w, i, j]'
-    avg_div_d = f'{avg_div_t}: {output_constraints}; ' if kwargs['pool_type'] == 'avg' else ''
-    avg_div_filter = f'- filter: "{{{avg_div_t}}}"' if kwargs['pool_type'] == 'avg' else ''
+    if pool_type == 'avg':
+        avg_div_t = 'stmt_div[n, c, h, w]'
+        avg_div_d = f'{avg_div_t}: {output_constraints}; '
+        avg_div_filter = f'- filter: "{{{avg_div_t}}}"'
+        outer_schedule = '[%s]' % ', '.join(map(
+            lambda x: f'{{{init_t}->[({x})];{calc_t}->[({x})];{avg_div_t}->[({x})]}}', ('n', 'c', 'h', 'w')))
+    else:
+        avg_div_d = ''
+        avg_div_filter = ''
+        outer_schedule = '[%s]' % ', '.join(map(
+            lambda x: f'{{{init_t}->[({x})];{calc_t}->[({x})]}}', ('n', 'c', 'h', 'w')))
 
     domain = '[batch, channel, in_height, in_width, out_height, out_width, ' \
              'kernel_height, kernel_width] -> {' \
@@ -25,8 +33,6 @@ def schedule(**kwargs):
              f'{avg_div_d}' \
              f'{calc_t}: {output_constraints} and {calc_constraints}' \
              '}'
-    outer_schedule = '[%s]' % ', '.join(map(
-        lambda x: f'{{{init_t}->[({x})];{calc_t}->[({x})]}}', ('n', 'c', 'h', 'w')))
     inner_schedule = '[%s]' % ', '.join(map(
         lambda x: f'{{{calc_t}->[({x})]}}', ('i', 'j')))
 
@@ -71,8 +77,7 @@ def statements(stride_height=1, stride_width=1, kernel_height=1, kernel_width=1,
                     t['out'][n, c, h, w], t['x'][n, c, h * stride_height + i, w * stride_width + j])
             else:
                 t['out'][n, c, h, w] = t['out'][n, c, h, w] \
-                                       + t['x'][n, c, h * stride_height + i, w * stride_width + j] \
-                                       / tir_imm(float(kernel_height * kernel_width))
+                                       + t['x'][n, c, h * stride_height + i, w * stride_width + j]
         elif trace_mode.mode == 'tensor_access':
             t['out'][n, c, h, w] = t['x'][n, c, h * stride_height + i, w * stride_width + j]
         else:
@@ -81,8 +86,7 @@ def statements(stride_height=1, stride_width=1, kernel_height=1, kernel_width=1,
                                            t['x'][n, c, h * stride_height + i, w * stride_width + j])
             else:
                 t['out'][n, c, h, w] = t['out'][n, c, h, w] \
-                                       + t['x'][n, c, h * stride_height + i, w * stride_width + j] \
-                                       / float(kernel_height * kernel_width)
+                                       + t['x'][n, c, h * stride_height + i, w * stride_width + j]
 
     def stmt_div(t, n, c, h, w):
         if pool_type != 'avg':
@@ -200,7 +204,7 @@ with calc_mode.under('tvm_topi_cuda_timing'):
     maxpool.imp(tune_kwargs={'n_trial': 1})
     out_b = maxpool.calc(x)
 tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy())
-avgpool = PlainPool(channel=64, in_height=224, in_width=224,
+avgpool = PlainPool(batch=20, channel=64, in_height=224, in_width=224,
                     kernel_height=224, kernel_width=224, pool_type='avg')
 with calc_mode.under('tvm_cuda_timing'):
     avgpool.imp(tune_kwargs={'n_trial': 1})
@@ -209,8 +213,8 @@ with calc_mode.under('tvm_topi_cuda_timing'):
     avgpool.imp(tune_kwargs={'n_trial': 1})
     out_b = avgpool.calc(x)
 tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 1e-3)
-adpavgpool = PlainAdaptivePool(channel=64, in_height=224, in_width=224,
-                               out_height=1, out_width=1, pool_type='avg')
+adpavgpool = AdaptivePool(batch=20, channel=64, in_height=224, in_width=224,
+                          out_height=1, out_width=1, pool_type='avg')
 with calc_mode.under('tvm_cuda_timing'):
     adpavgpool.imp(tune_kwargs={'n_trial': 1})
     out_a = adpavgpool.calc(x)
