@@ -2,6 +2,7 @@ import threading
 from contextlib import contextmanager
 from functools import reduce
 from typing import Dict, Iterable
+import re
 
 import tvm
 from tvm import tir, te
@@ -235,41 +236,32 @@ class CUDANode2TIRParser(ISLNode2TIR):
         return super().parse(node, parent)
 
     def before_each_mark(self, node, ast_build):
-        if node.name() == 'bind=threadIdx':
+        if 'threadIdx' in node.name():
             for i in self.shared_tensors:
                 i.gen_offset_ast(ast_build)
-        pass
 
     def parse_mark(self, node, parent):
         mark = node.id().name()
 
-        def _build_body():
-            b = super(CUDANode2TIRParser, self).parse_mark(node, parent)
-            if mark.startswith('bind=') and not isinstance(node.node(), isl.ast_node_for):
-                _, axis = mark.rsplit('=', 1)
-                with self.cuda_iter_var_table.axis(axis, 1) as iter_var:
-                    b = tir.AttrStmt(node=iter_var, attr_key='thread_extent', value=tir_imm(1), body=b)
-            return b
-
-        if mark == 'bind=threadIdx' and mark not in self.mark_stack:
-            def _under_shared(ith):
-                if ith >= len(self.shared_tensors):
-                    return _build_body()
-                tensor = self.shared_tensors[ith]
-                with self.tensor_table.scoped(tensor.origin.name, 'shared', tensor=tensor):
-                    return tensor.build_tir_realize('shared', _under_shared(ith + 1))
-
-            for i in self.shared_tensors:
-                i.gen_offset_tvm_repr(self.expr_parser)
-            body = _under_shared(0)
-        else:
-            body = _build_body()
-
-        return body
+        b = super(CUDANode2TIRParser, self).parse_mark(node, parent)
+        if mark.startswith('bind=') and not isinstance(node.node(), isl.ast_node_for):
+            _, axis = mark.rsplit('=', 1)
+            if not re.fullmatch(r'\w+', axis):
+                axis, *axis_per_bind = re.findall(r'\w+', axis)
+                for i in reversed(axis_per_bind):
+                    with self.cuda_iter_var_table.axis(i, 1) as iter_var:
+                        b = tir.AttrStmt(node=iter_var, attr_key='thread_extent', value=tir_imm(1), body=b)
+            with self.cuda_iter_var_table.axis(axis, 1) as iter_var:
+                b = tir.AttrStmt(node=iter_var, attr_key='thread_extent', value=tir_imm(1), body=b)
+        return b
 
     def parse_for(self, node, parent):
         if self.mark_stack and self.mark_stack[-1].startswith('bind='):
             _, axis = self.mark_stack[-1].rsplit('=', 1)
+            one_per_bind = False
+            if not re.fullmatch(r'\w+', axis):
+                one_per_bind = True
+                axis, *axis_per_bind = re.findall(r'\w+', axis)
             bounds = []
             cur, cur_p = node, parent
             while isinstance(cur, isl.ast_node_for):
@@ -287,7 +279,8 @@ class CUDANode2TIRParser(ISLNode2TIR):
 
             def innermost():
                 body = self.parse(cur, cur_p)
-                if self.mark_stack[-1] == 'bind=threadIdx':
+
+                if 'threadIdx' in self.mark_stack[-1]:
                     tensors_from_host = []
                     for i in self.shared_tensors:
                         if self.has_side_effect and 'read' in i.access_types \
@@ -311,9 +304,21 @@ class CUDANode2TIRParser(ISLNode2TIR):
                         body = tir.SeqStmt(stmts)
                 return body
 
+            def _under_shared(ith):
+                if ith >= len(self.shared_tensors):
+                    return innermost()
+                tensor = self.shared_tensors[ith]
+                with self.tensor_table.scoped(tensor.origin.name, 'shared', tensor=tensor):
+                    return tensor.build_tir_realize('shared', _under_shared(ith + 1))
+
             def recur(num, axis_var):
                 if num >= len(bounds):
-                    return innermost()
+                    if 'threadIdx' in self.mark_stack[-1]:
+                        for i in self.shared_tensors:
+                            i.gen_offset_tvm_repr(self.expr_parser)
+                        return _under_shared(0)
+                    else:
+                        return innermost()
                 c_var_name, lower, upper, step = bounds[num]
                 with self.iter_var_table.var(c_var_name) as c_var:
                     val = axis_var // anchors[num] % extents[num]
@@ -322,10 +327,20 @@ class CUDANode2TIRParser(ISLNode2TIR):
                         body=recur(num + 1, axis_var)
                     )
 
+            def wrap_one_per_bind(body):
+                if one_per_bind:
+                    for i in reversed(axis_per_bind):
+                        with self.cuda_iter_var_table.axis(i, 1) as iter_var:
+                            body = tir.AttrStmt(
+                                node=iter_var, attr_key='thread_extent',
+                                value=tir_imm(1), body=body
+                            )
+                return body
+
             with self.cuda_iter_var_table.axis(axis, total) as iter_var:
                 return tir.AttrStmt(
                     node=iter_var, attr_key='thread_extent', value=tir_imm(total),
-                    body=recur(0, iter_var)
+                    body=wrap_one_per_bind(recur(0, iter_var))
                 )
         return super().parse_for(node, parent)
 
