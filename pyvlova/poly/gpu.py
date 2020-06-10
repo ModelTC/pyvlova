@@ -17,7 +17,7 @@ def gpu_tile(tree, tile_size, permutation=None):
     assert tree.parallel_tilable()
     box_size, lowers, strides = tree.outermost_band_box()
     n = len(box_size)
-    assert len(tile_size) == n
+    tile_size = tile_size[:n]
 
     real_tile_size = [tile_size[i] * strides[i] for i in range(n)]
     filled_box_size = [-(-box_size[i] // (real_tile_size[i])) * real_tile_size[i] for i in range(n)]
@@ -60,13 +60,18 @@ def gpu_tile(tree, tile_size, permutation=None):
     if permutation is not None:
         band.permute(*permutation)
 
-    band.tile(*real_tile_size)
+    if reduce(int.__mul__, tile_size) == 1:
+        band.insert_before(MarkNode('bind=blockIdx(threadIdx)'))
+        child = band.child
+        child.insert_before(MarkNode('clear(bind)'))
+    else:
+        band.tile(*real_tile_size)
 
-    band.insert_before(MarkNode('bind=blockIdx'))
-    child = band.child
-    child.insert_before(MarkNode('bind=threadIdx'))
-    kernel = child.child
-    kernel.insert_before(MarkNode('clear(bind)'))
+        band.insert_before(MarkNode('bind=blockIdx'))
+        child = band.child
+        child.insert_before(MarkNode('bind=threadIdx'))
+        kernel = child.child
+        kernel.insert_before(MarkNode('clear(bind)'))
 
 
 class BlockTensorUsage(Tensor):
@@ -242,11 +247,10 @@ def gpu_find_sharable_tensors(tree, statements, tensors, max_shared_memory=None)
     node = tree.root
 
     while node and isinstance(node, (NodeWithSingleChild, MarkNode)):
-        if isinstance(node, MarkNode) and node.mark == 'bind=threadIdx':
+        if isinstance(node, MarkNode) and 'threadIdx' in node.mark:
             break
         node = node.child
-    if not isinstance(node, MarkNode) or node.mark != 'bind=threadIdx':
-        return None
+    assert isinstance(node, MarkNode) and 'threadIdx' in node.mark
 
     if max_shared_memory is None:
         max_shared_memory = cuda_settings['max_shared_memory']
