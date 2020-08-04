@@ -2,5 +2,5 @@
 	path = isl
 	url = https://github.com/ChieloNewctle/isl
 [submodule "tvm"]
-	path = tvm
+	path = incubator-tvm
 	url = https://github.com/apache/incubator-tvm
