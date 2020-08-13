@@ -1,17 +1,51 @@
 from collections import defaultdict
 from functools import reduce
+from contextlib import contextmanager
 
 import isl
-from tvm import tir
+from tvm import tir, te
 
 from pyvlova.autotune.settings import cuda_settings
-from pyvlova.poly.poly import Tensor, CUDAIterVarTable, IterVarTable, Statement, record_effective_op
-from pyvlova.poly.schedule_tree.node import SequenceNode, FilterNode, MarkNode, \
-    NodeWithSingleChild
+from pyvlova.poly.schedule_tree.node import SequenceNode, FilterNode, MarkNode, NodeWithSingleChild
 from pyvlova.utils import tir_load, tir_imm, tir_store, structure_unnamed_fixed_box
+from .poly import IterVarTable, Tensor, Statement, record_effective_op
 
 
-def gpu_tile(tree, tile_size, permutation=None):
+class CUDAIterVarTable(IterVarTable):
+    def __init__(self):
+        super().__init__()
+        self.axis_cnt = defaultdict(int)
+        self.var_extent = defaultdict(lambda: defaultdict(lambda: 1))
+        self.axis_extent = defaultdict(lambda: 1)
+        self.axis_idx = defaultdict(lambda: tir_imm(0))
+
+    @contextmanager
+    def axis(self, name, extent):
+        with self.var(name) as v:
+            self.axis_extent[name] *= extent
+            self.axis_idx[name] = self.axis_idx[name] * extent + v
+            self.var_extent[name][str(v.var)] = extent
+            yield v
+            del self.var_extent[name][str(v.var)]
+            self.axis_idx[name] = (self.axis_idx[name] - v) // extent
+            self.axis_extent[name] //= extent
+
+    def push(self, name=None, var=None):
+        k = self.axis_cnt[name]
+        self.axis_cnt[name] += 1
+        name = f'{name}.{chr(ord("x") + k)}'
+        if var is None:
+            var = te.thread_axis(name)
+        return super().push(name, var)
+
+    def pop(self):
+        var = super().pop()
+        axis, _ = var.var.name.split('.', 1)
+        self.axis_cnt[axis] -= 1
+        return var
+
+
+def cuda_tile(tree, tile_size, permutation=None):
     assert tree.parallel_tilable()
     box_size, lowers, strides = tree.outermost_band_box()
     n = len(box_size)
@@ -36,7 +70,7 @@ def gpu_tile(tree, tile_size, permutation=None):
     block_fake_constraints = [
         f'({i} mod {stride}) = (({lower}) mod {stride})'
         f' and 0 <= {i} - ({lower}) < {size}'
-        f' and ({i} mod ({rt_size})) = (({lower}) mod ({rt_size}))'
+        f' and ({i} mod {rt_size}) = (({lower}) mod {rt_size})'
         for i, lower, stride, size, rt_size in
         zip(fake_args, lowers, strides, filled_box_size, real_tile_size)
     ]
@@ -80,7 +114,6 @@ def gpu_tile(tree, tile_size, permutation=None):
         child.insert_before(MarkNode('clear(bind)'))
     else:
         band.tile(*real_tile_size)
-
         band.insert_before(MarkNode('bind=blockIdx'))
         child = band.child
         child.insert_before(MarkNode('bind=threadIdx'))
@@ -128,8 +161,6 @@ class BlockTensorUsage(Tensor):
         assert self.offset_ast
         self.offset_tvm_repr = list(map(expr_parser.parse, self.offset_ast))
 
-    UNROLL_SIZE = 8
-
     def build_copy_from_host(self, cuda_var_table, iter_var_table):
         def copy_from_host(new_idx, old_idx):
             record_effective_op(tir_store(self.te_tensor, new_idx, self.origin[old_idx]))
@@ -167,86 +198,16 @@ class BlockTensorUsage(Tensor):
         return self._build_copy_schedule(cuda_var_table, iter_var_table, stmt)
 
     def _build_copy_schedule(self, cuda_var_table: CUDAIterVarTable, iter_var_table: IterVarTable, stmt: Statement):
-        # raise Exception('Bad implementation')
-        # noinspection PyUnreachableCode
         num_threads = cuda_var_table.axis_extent['threadIdx']
         idx = cuda_var_table.axis_idx['threadIdx']
         total = reduce(tir.Mul, self.extent(True))
         with iter_var_table.var() as iter_var, iter_var_table.var() as extent_var:
-            # noinspection PyTypeChecker
             body = tir.For(
                 iter_var, tir_imm(0), extent_var, tir.For.Serial, 0,
                 stmt.to_tvm(None, iter_var * num_threads + idx)
             )
             body = tir.LetStmt(extent_var, (total - 1 - idx) // num_threads + 1, body)
         return body
-
-    def _bad_build_copy_schedule(self, cuda_var_table: CUDAIterVarTable, iter_var_table: IterVarTable, stmt: Statement):
-        raise Exception('Bad implementation')
-        # noinspection PyUnreachableCode
-        num_threads = cuda_var_table.axis_extent['threadIdx']
-        idx = cuda_var_table.axis_idx['threadIdx']
-        total = reduce(int.__mul__, self.extent(True))
-
-        def _build_slow_loop(extent, fast_body):
-            last_idx = (extent - 1) * num_threads + idx
-            _, last_old_idx = self._get_tensor_index(last_idx)
-            # noinspection PyTypeChecker
-            slow_cond = reduce(tir.Or, [
-                tir.GE(i - j, tir_imm(k))
-                for i, j, k in zip(last_old_idx, self.origin.offset, self.origin.shape)
-            ])
-            with iter_var_table.var() as iter_var:
-                _, old_idx = self._get_tensor_index(iter_var * num_threads + idx)
-                # noinspection PyTypeChecker
-                cond = reduce(tir.And, [
-                    tir.LT(i - j, tir_imm(k))
-                    for i, j, k in zip(old_idx, self.origin.offset, self.origin.shape)
-                ])
-                # noinspection PyTypeChecker
-                slow_body = tir.For(
-                    iter_var, tir_imm(0), extent, tir.For.Serial, 0,
-                    tir.IfThenElse(
-                        cond, stmt.to_tvm(None, iter_var * num_threads + idx), None
-                    )
-                )
-            return tir.IfThenElse(slow_cond, slow_body, fast_body)
-
-        def _build_opt_loop(extent):
-            if not extent:
-                return None
-            outer_extent = extent // self.UNROLL_SIZE
-            remained_extent = extent % self.UNROLL_SIZE
-            with iter_var_table.var() as iter_var:
-                remained_body = tir.For(
-                    iter_var, tir_imm(outer_extent * self.UNROLL_SIZE),
-                    remained_extent, tir.For.Unrolled, 0,
-                    stmt.to_tvm(None, iter_var * num_threads + idx)
-                )
-            if outer_extent:
-                with iter_var_table.var() as outer_var, iter_var_table.var() as inner_var:
-                    loop_body = stmt.to_tvm(
-                        None, (outer_var * self.UNROLL_SIZE + inner_var) * num_threads + idx
-                    )
-                    loop_body = tir.For(
-                        inner_var, tir_imm(0), self.UNROLL_SIZE, tir.For.Unrolled, 0, loop_body
-                    )
-                    loop_body = tir.For(
-                        outer_var, tir_imm(0), outer_extent, tir.For.Serial, 0, loop_body
-                    )
-                return tir.SeqStmt([loop_body, remained_body])
-            return remained_body
-
-        def _build_loop(extent):
-            return _build_slow_loop(extent, _build_opt_loop(extent))
-
-        if total % num_threads:
-            return tir.IfThenElse(
-                tir.LT(idx, tir_imm(total % num_threads)),
-                _build_loop(-(-total // num_threads)),
-                _build_loop(total // num_threads)
-            )
-        return _build_loop(total // num_threads)
 
     def getitem_tvm(self, key):
         key = tuple((i - j for i, j in zip(key, self.offset_tvm_repr)))
@@ -257,7 +218,7 @@ class BlockTensorUsage(Tensor):
         super(BlockTensorUsage, self).setitem_tvm(key, value)
 
 
-def gpu_find_sharable_tensors(tree, statements, tensors, max_shared_memory=None):
+def cuda_find_sharable_tensors(tree, statements, tensors, max_shared_memory=None):
     node = tree.root
 
     while node and isinstance(node, (NodeWithSingleChild, MarkNode)):
@@ -275,7 +236,7 @@ def gpu_find_sharable_tensors(tree, statements, tensors, max_shared_memory=None)
     tensor_access = dict()
     tensor_stmts = defaultdict(lambda: defaultdict(lambda: isl.union_map('{}')))
     tensor_access_types = defaultdict(set)
-    for stmt_name, stmt in statements.items():
+    for _, stmt in statements.items():
         stmt_tensor_access, _ = stmt.get_access(tensors)
         for k in ('read', 'write'):
             for name, access in stmt_tensor_access[k].items():

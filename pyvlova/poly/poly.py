@@ -107,7 +107,7 @@ class Tensor(object):
 
     @property
     def size_in_bytes(self):
-        return reduce(int.__mul__, self.shape) * sizeof(self.dtype)
+        return reduce(lambda x, y: x * y, self.shape) * sizeof(self.dtype)
 
     def getitem_tvm(self, key):
         assert len(key) == len(self.shape)
@@ -133,7 +133,6 @@ class Tensor(object):
             value = tir_imm(value)
         record_effective_op(tir_store(self.te_tensor, key, value))
 
-    # noinspection PyUnusedLocal
     def setitem_tensor_access(self, key, value):
         assert len(key) == len(self.shape)
         key = list(map(parse_sympy_to_isl_repr, key))
@@ -197,7 +196,7 @@ class TensorTable(object):
         return self.scoped_stack[name][-1]
 
     def pop_scoped(self, name: str):
-        scope, tensor = self.scoped_stack[name].pop(-1)
+        _, tensor = self.scoped_stack[name].pop(-1)
         if not self.scoped_stack[name]:
             del self.scoped_stack[name]
         return tensor
@@ -239,40 +238,6 @@ class IterVarTable(object):
         v = self.push(name, var)
         yield v
         self.pop()
-
-
-class CUDAIterVarTable(IterVarTable):
-    def __init__(self):
-        super().__init__()
-        self.axis_cnt = defaultdict(int)
-        self.var_extent = defaultdict(lambda: defaultdict(lambda: 1))
-        self.axis_extent = defaultdict(lambda: 1)
-        self.axis_idx = defaultdict(lambda: tir_imm(0))
-
-    @contextmanager
-    def axis(self, name, extent):
-        with self.var(name) as v:
-            self.axis_extent[name] *= extent
-            self.axis_idx[name] = self.axis_idx[name] * extent + v
-            self.var_extent[name][str(v.var)] = extent
-            yield v
-            del self.var_extent[name][str(v.var)]
-            self.axis_idx[name] = (self.axis_idx[name] - v) // extent
-            self.axis_extent[name] //= extent
-
-    def push(self, name=None, var=None):
-        k = self.axis_cnt[name]
-        self.axis_cnt[name] += 1
-        name = f'{name}.{chr(ord("x") + k)}'
-        if var is None:
-            var = te.thread_axis(name)
-        return super().push(name, var)
-
-    def pop(self):
-        var = super().pop()
-        axis, _ = var.var.name.split('.', 1)
-        self.axis_cnt[axis] -= 1
-        return var
 
 
 class Statement(object):

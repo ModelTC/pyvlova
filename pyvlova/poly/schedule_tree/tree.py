@@ -7,8 +7,7 @@ from typing import Any, Mapping, Optional
 import isl
 import yaml
 
-from pyvlova.poly.schedule_tree.node import Node, NodeWithSingleChild, \
-    BandNode, DomainNode, ExtensionNode, SequenceNode, FilterNode, MarkNode
+from .node import Node, NodeWithSingleChild, BandNode, DomainNode, ExtensionNode, SequenceNode, FilterNode, MarkNode
 
 
 class ScheduleTree(object):
@@ -77,7 +76,7 @@ class ScheduleTree(object):
         return True
 
     def apply_params(self, *args, **kwargs):
-        return self.root.apply_params(*args, **kwargs)
+        self.root.apply_params(*args, **kwargs)
 
     def add_to_domain(self, uset):
         if isinstance(self.root, DomainNode):
@@ -87,25 +86,3 @@ class ScheduleTree(object):
                 isl.union_map.from_range(uset))
         else:
             assert False
-
-
-"""
-example_tree = ScheduleTree.from_yaml('''
-domain: "[n, m, q] -> { S0[i, j]: 0 <= i < n and 0 <= j < m; S1[i, j, k]: 0 <= i < n and 0 <= j < m and 0 <= k < q}"
-child:
-  schedule: "[{S0[i, j] -> [(i)]; S1[i, j, k] -> [(i)]}, {S0[i, j] -> [(j)]; S1[i, j, k] -> [(j)]}]"
-  permutable: 1
-  coincident: [ 1, 1 ]
-  child:
-    sequence:
-    - filter: '{S0[i, j]}'
-    - filter: '{S1[i, j, k]}'
-      child:
-        schedule: "[{S1[i, j, k] -> [(k)]}]"
-''')
-
-tree = example_tree.copy()
-tree.apply_params(n=1024, m=2048, q=4096)
-tree.gpu_tile([391, 1096])
-print(tree.to_yaml())
-"""
