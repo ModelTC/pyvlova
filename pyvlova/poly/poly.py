@@ -11,8 +11,7 @@ import tvm
 import isl
 from tvm import te, tir
 
-from pyvlova.utils import Mode, tir_load, tir_store, tir_imm, sizeof
-from pyvlova.codegen.sympy2isl import parse_sympy_to_isl_repr
+from ..utils import Mode, tir_load, tir_store, tir_imm, sizeof, parse_sympy_to_isl_repr
 
 
 trace_mode = Mode()
@@ -69,12 +68,12 @@ record_effective_op = _EffectiveOpRecorder()
 class Tensor(object):
     def __init__(self, name, shape, offset=None, dtype='float32'):
         if offset is None:
-            offset = [tir_imm(0)] * len(shape)
+            offset = [0] * len(shape)
         self.name = name
         self.shape = list(shape)
         self.offset = list(offset)
         self.dtype = dtype
-        self.te_tensor = te.placeholder(self.shape, self.dtype, self.name)
+        self.te_tensor = te.placeholder(shape=self.shape, dtype=self.dtype, name=self.name)
 
     def to_isl_set(self):
         keys = ['i%d' % i for i in range(len(self.shape))]
@@ -85,32 +84,15 @@ class Tensor(object):
         s = isl.set(f'{{ {self.name}[{", ".join(keys)}] : {" and ".join(constraints)} }}')
         return s
 
-    def build_tir_realize(self, scope='', body=None):
-        def realize(b):
-            tensor = self.te_tensor
-            # noinspection PyTypeChecker
-            return tir.AttrStmt(
-                node=tensor.op, attr_key='realize_scope', value=tir_imm(scope),
-                body=tir.Realize(
-                    func=tensor.op, value_index=tensor.value_index, dtype=tensor.dtype,
-                    bounds=list(map(tvm.ir.Range.make_by_min_extent, self.offset, tensor.shape)),
-                    condition=tir_imm(True),
-                    body=tir.ProducerConsumer(
-                        func=tensor.op, is_producer=True,
-                        body=b
-                    )
-                )
-            )
-        if body is None:
-            return realize
-        return realize(body)
-
     @property
     def size_in_bytes(self):
         return reduce(lambda x, y: x * y, self.shape) * sizeof(self.dtype)
 
     def getitem_tvm(self, key):
         assert len(key) == len(self.shape)
+        import tvm
+        ana = tvm.arith.Analyzer()
+        key = tuple(map(ana.canonical_simplify, key))
         return tir_load(self.te_tensor, key)
 
     def getitem_tensor_access(self, key):
@@ -129,8 +111,10 @@ class Tensor(object):
 
     def setitem_tvm(self, key, value):
         assert len(key) == len(self.shape)
-        if isinstance(value, (int, float, str, bool)):
-            value = tir_imm(value)
+        import tvm
+        ana = tvm.arith.Analyzer()
+        key = tuple(map(ana.canonical_simplify, key))
+        value = tir_imm(value)
         record_effective_op(tir_store(self.te_tensor, key, value))
 
     def setitem_tensor_access(self, key, value):
@@ -145,6 +129,19 @@ class Tensor(object):
             key = list(key)
         assert trace_mode.mode
         return getattr(self, 'setitem_' + trace_mode.mode)(key, value)
+
+    def build_tir_realize(self, scope=None, body=None):
+        bounds = [tvm.ir.Range(i, i + j) for i, j in zip(self.offset, self.shape)]
+        body = tir.ProducerRealize(
+            producer=self.te_tensor, bounds=bounds,
+            condition=tir_imm(True), body=body
+        )
+        if scope:
+            body = tir.AttrStmt(
+                node=self.te_tensor.op, attr_key='realize_scope',
+                value=tir_imm(scope), body=body
+            )
+        return body
 
 
 TensorTableItem = namedtuple('TensorTableItem', ['scope', 'tensor'])
