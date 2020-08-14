@@ -270,7 +270,6 @@ class PolyTVMOp(PolyOp):
             if te_tensors[i].name in named_res:
                 te_tensors[i] = named_res[te_tensors[i].name]
         s = type(self).topi_cuda_schedule_func(res)
-        # print(tvm.lower(s, te_tensors, name=slugify(name)))
         func = tvm.build(s, te_tensors, name=slugify(name))
         return func
 

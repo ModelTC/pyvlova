@@ -141,11 +141,8 @@ class MobileNetV2(CombinedOp):
         # This exists since TorchScript doesn't support inheritance, so the superclass method
         # (this one) needs to have a name other than `forward` that can be accessed in a subclass
         x = self.features.calc(x)
-        print('1', x.asnumpy().mean())
         x = self.pool.calc(x)
-        print('2', x.asnumpy().mean())
         x = self.flatten.calc(x)
-        print('3', x.asnumpy().mean())
         x = self.fc.calc(x)
         return x
 
