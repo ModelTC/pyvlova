@@ -1,9 +1,5 @@
-from pyvlova.models.utils import *
-
-from pyvlova.op.base import CombinedOp, SequenceOp
-from pyvlova.op.binary import ElementwiseAdd
-from pyvlova.op.linear import Linear
-from pyvlova.op.unary import ReLU6
+from .utils import *
+from ..op import CombinedOp, SequenceOp, ElementwiseAdd, Linear, ReLU6
 
 
 def _make_divisible(v, divisor, min_value=None):
@@ -155,32 +151,3 @@ class MobileNetV2(CombinedOp):
 
     def calc(self, x):
         return self._forward_impl(x)
-
-
-
-model = MobileNetV2('mobilenet', [1, 3, 224, 224])
-model_2 = MobileNetV2('mobilenet', [1, 3, 224, 224])
-
-import tvm
-import numpy
-from pyvlova.op.base import calc_mode
-# ctx = tvm.cpu()
-# x = tvm.nd.array(numpy.random.random((1, 3, 224, 224)).astype('float32'), ctx=ctx)
-# with calc_mode.under('tvm_llvm_timing'):
-#     model.imp()
-#     out = model.calc(x)
-ctx = tvm.gpu()
-x = tvm.nd.array(numpy.random.random((1, 3, 224, 224)).astype('float32'), ctx=ctx)
-n = 0
-with calc_mode.under('tvm_cuda_timing'):
-    from tvm import autotvm
-    model.imp(do_shared_opt=False, tune_kwargs={'n_trial': 8, 'tuner': autotvm.tuner.RandomTuner})
-    # model.imp(do_shared_opt=False, tune_kwargs={'n_trial': n})
-    out_c = model.calc(x)
-# with calc_mode.under('tvm_cuda_timing'):
-#     model.imp(do_shared_opt=True, tune_kwargs={'n_trial': n})
-#     out_a = model.calc(x)
-# with calc_mode.under('tvm_topi_cuda_timing'):
-#     model.imp(tune_kwargs={'n_trial': n})
-#     out_b = model.calc(x)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 1e-3)

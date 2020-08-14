@@ -90,9 +90,6 @@ class Tensor(object):
 
     def getitem_tvm(self, key):
         assert len(key) == len(self.shape)
-        import tvm
-        ana = tvm.arith.Analyzer()
-        key = tuple(map(ana.canonical_simplify, key))
         return tir_load(self.te_tensor, key)
 
     def getitem_tensor_access(self, key):
@@ -111,9 +108,6 @@ class Tensor(object):
 
     def setitem_tvm(self, key, value):
         assert len(key) == len(self.shape)
-        import tvm
-        ana = tvm.arith.Analyzer()
-        key = tuple(map(ana.canonical_simplify, key))
         value = tir_imm(value)
         record_effective_op(tir_store(self.te_tensor, key, value))
 
@@ -269,42 +263,3 @@ class Statement(object):
                 self.calc(tensor_table, *args)
                 self.access = record_effective_op.get_tensor_access(isl_repr)
         return self.access
-
-
-'''
-N, M, Q = 512, 512, 1024
-example_tensor_table = TensorTable()
-example_tensor_table.add_tensor('A', [N, Q])
-example_tensor_table.add_tensor('B', [Q, M])
-example_tensor_table.add_tensor('C', [N, M])
-
-
-def _example_statements():
-    def S0(t, i, j):
-        t['C'][i, j] = 0.0
-
-    def S1(t, i, j, k):
-        t['C'][i, j] = t['C'][i, j] + t['A'][i, k] * t['B'][k, j]
-
-    return {
-        'S0': Statement('S0', 2, S0),
-        'S1': Statement('S1', 3, S1),
-    }
-
-example_iter_var_table = IterVarTable()
-_tmp_vars = [example_iter_var_table.push() for _ in range(3)]
-
-example_statements = _example_statements()
-
-for statement in example_statements.values():
-    statement.get_access(example_tensor_table)
-
-for i in example_statements.values():
-    j = i.to_tvm(example_tensor_table, *_tmp_vars[:i.dim])
-    print(type(j), j)
-    j = i.get_access(example_tensor_table)
-    print(type(j), j)
-
-for i in example_tensor_table.table.values():
-    print(i.to_isl_set())
-'''

@@ -1,8 +1,7 @@
-import topi
+from tvm import topi
 
-from pyvlova.op.conv import PlainConv2d, Conv2d
-from pyvlova.poly.schedule_tree.tree import ScheduleTree
-from ..poly.poly import TensorTable, Statement
+from ..poly import TensorTable, Statement, ScheduleTree
+from .conv import PlainConv2d, Conv2d
 
 
 def schedule(**kwargs):
@@ -91,34 +90,3 @@ class GroupedConv2d(Conv2d):
         self.conv = PlainGroupedConv2d(name=self.name + '.conv', groups=groups, **self.conv.arguments)
         self.weight = self.conv.tensors['weight']
         self._ops[op_idx] = self.conv
-
-
-'''
-import tvm
-import numpy
-from .base import calc_mode
-ctx = tvm.gpu()
-x = tvm.nd.array(numpy.random.random((8, 64, 24, 24)).astype('float32'), ctx=ctx)
-import torch
-tconv1 = torch.nn.Conv2d(64, 32, 7, 2, 3, True, groups=32)
-out_t = tconv1(torch.tensor(x.asnumpy())).detach().cpu().numpy()
-conv1 = GroupedConv2d(
-    batch=8,
-    in_channel=64, in_height=24, in_width=24,
-    out_channel=32, kernel_height=7, kernel_width=7,
-    stride_height=2, stride_width=2,
-    pad_top=3, pad_bottom=3, pad_left=3, pad_right=3,
-    biased=True, groups=32, name='conv1'
-)
-conv1.weight = tconv1.weight.detach().cpu().numpy()
-conv1.bias = tconv1.bias.detach().cpu().numpy()
-with calc_mode.under('tvm_cuda_timing'):
-    conv1.imp(do_shared_opt=True, tune_kwargs={'n_trial': 8})
-    out_a = conv1.calc(x)
-with calc_mode.under('tvm_topi_cuda_timing'):
-    conv1.imp(tune_kwargs={'n_trial': 8})
-    out_b = conv1.calc(x)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 0.01, 1e-3)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_t, 0.01, 1e-3)
-tvm.testing.assert_allclose(out_b.asnumpy(), out_t, 0.01, 1e-3)
-'''

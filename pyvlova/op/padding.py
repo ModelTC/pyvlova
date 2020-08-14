@@ -1,8 +1,7 @@
-import topi
+from tvm import topi
 
-from pyvlova.op.base import ArgumentedOp
-from pyvlova.poly.poly import TensorTable, Statement
-from pyvlova.poly.schedule_tree.tree import ScheduleTree
+from .base import ArgumentedOp
+from ..poly import TensorTable, Statement, ScheduleTree
 
 
 def schedule(**kwargs):
@@ -80,21 +79,3 @@ class Padding(ArgumentedOp):
     topi_cuda_calc_func = topi.nn.pad
     topi_cuda_schedule_func = topi.cuda.schedule_elemwise
     topi_cuda_calc_ret_map = ['out']
-
-
-'''
-import tvm
-import numpy
-from .base import calc_mode
-ctx = tvm.gpu()
-x = tvm.nd.array(numpy.random.random((1, 64, 224, 224)).astype('float32'), ctx=ctx)
-padding = PlainPadding(channel=64, in_height=224, in_width=224,
-                       pad_top=1, pad_bottom=2, pad_left=3, pad_right=4)
-with calc_mode.under('tvm_cuda_timing'):
-    padding.imp(tune_kwargs={'n_trial': 1})
-    out_a = padding.calc(x)
-with calc_mode.under('tvm_topi_cuda_timing'):
-    padding.imp(tune_kwargs={'n_trial': 1})
-    out_b = padding.calc(x)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy())
-'''

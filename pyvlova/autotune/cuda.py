@@ -1,14 +1,15 @@
 from functools import reduce
 from typing import Tuple
+import os
 
 import tvm
 import numpy
 from tvm import autotvm
 
-from .settings import default_tune_eval_settings, cuda_settings
+from .settings import default_tune_eval_settings
 from ..codegen import lower_tvm_stmt
 from ..poly import cuda_tile, ScheduleTree
-from ..utils import load_best, slugify, get_unnamed_tuples
+from ..utils import load_best, slugify, get_unnamed_tuples, cuda_settings
 
 
 class CUDATileConfigEntity(list):
@@ -191,9 +192,12 @@ class CUDATileTask(autotvm.task.Task):
 
 
 def tune_cuda_tile(name, tree, kernel_args, parser, n_trial=40,
-                   tuner=None, measure_option=None, callbacks=None):
+                   tuner=None, measure_option=None, callbacks=None, preserve_log=False):
     tmp_file_name = slugify(name) + '.cuda_tile.log'
     task = CUDATileTask(name, tree.copy(), kernel_args, parser)
+    from random import randint
+    stmt, args = task.instantiate(task.config_space.get(randint(0, len(task.config_space) - 1)))
+    kernel = tvm.build(stmt, name=name, target='cuda')
 
     if n_trial > 0:
         if tuner is None:
@@ -224,32 +228,7 @@ def tune_cuda_tile(name, tree, kernel_args, parser, n_trial=40,
 
     print('CUDATile %s: best %s, best cost %.12f' % (name, repr(best), best_cost))
 
+    if not preserve_log:
+        os.remove(tmp_file_name)
+
     return best, best_cost
-
-
-'''
-import os
-from ..codegen.isl_to_tir import parser, example_tree, CUDANode2TIRParser
-from .builder import PolyLocalBuilder
-from .utils import load_best
-
-tree = example_tree.copy()
-tree.apply_params(n=512, m=512, q=1024)
-
-
-
-
-new_tree = tune_cuda_tile('example', tree, parser, n_trial=80)
-print(new_tree.to_yaml())
-
-new_tree = tune_cuda_tile('example', tree, parser, tuner=autotvm.tuner.GATuner, n_trial=80)
-print(new_tree.to_yaml())
-
-
-import logging, sys
-logging.getLogger('autotvm').setLevel(logging.DEBUG)
-logging.getLogger('autotvm').addHandler(logging.StreamHandler(sys.stdout))
-# 
-# new_tree = tune_cuda_tile('example', tree, parser, tuner=autotvm.tuner.RandomTuner)
-# print(new_tree.to_yaml())
-'''

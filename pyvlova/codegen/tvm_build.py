@@ -2,9 +2,11 @@ import tvm
 from tvm.te import schedule
 from tvm.driver import build_module
 
+from ..utils import slugify
 
-def build_tvm_stmt(stmt, args, binds=None, name='main',
-        target=None, target_host=None):
+
+def lower_tvm_stmt(stmt, args, binds=None, name='main'):
+    name = slugify(name)
     compact = schedule.VerifyCompactBuffer(stmt)
     binds, arg_list = build_module.get_binds(
         args, compact=compact, binds=binds)
@@ -19,9 +21,6 @@ def build_tvm_stmt(stmt, args, binds=None, name='main',
         func = func.with_attr('tir.noalias', True)
 
     module = tvm.IRModule({name: func})
-    module = build_module.lower( module, args, name=name)
+    module = build_module.lower(module, args, name=name)
 
-    kernel = build_module.build(
-        module, name=name, target=target, target_host=target_host)
-
-    return kernel
+    return module

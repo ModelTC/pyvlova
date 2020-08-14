@@ -1,8 +1,7 @@
-import topi
+from tvm import topi
 
-from pyvlova.op.base import ArgumentedOp, CombinedOp, OpParameter
-from pyvlova.poly.poly import TensorTable
-from pyvlova.poly.schedule_tree.tree import ScheduleTree
+from .base import ArgumentedOp, CombinedOp, OpParameter
+from ..poly import TensorTable, ScheduleTree
 
 
 def schedule(**kwargs):
@@ -132,28 +131,3 @@ class Linear(CombinedOp):
         else:
             x = self.linear.calc(x, self.weight)
         return x
-
-
-'''
-import tvm
-import numpy
-from .base import calc_mode
-ctx = tvm.gpu()
-x = tvm.nd.array(numpy.random.random((1, 64)).astype('float32'), ctx=ctx)
-linear = Linear(in_channel=64, out_channel=8, biased=True)
-with calc_mode.under('tvm_cuda_timing'):
-    linear.imp(tune_kwargs={'n_trial': 1})
-    out_a = linear.calc(x)
-with calc_mode.under('tvm_topi_cuda_timing'):
-    linear.imp(tune_kwargs={'n_trial': 1})
-    out_b = linear.calc(x)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 1e-3)
-linear = Linear(in_channel=64, out_channel=8, biased=False)
-with calc_mode.under('tvm_cuda_timing'):
-    linear.imp(tune_kwargs={'n_trial': 1})
-    out_a = linear.calc(x)
-with calc_mode.under('tvm_topi_cuda_timing'):
-    linear.imp(tune_kwargs={'n_trial': 1})
-    out_b = linear.calc(x)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 1e-3)
-'''

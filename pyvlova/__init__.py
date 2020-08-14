@@ -1,3 +1,3 @@
-from . import utils
-from . import poly
-from . import codegen
+from . import utils, poly, codegen, op, models
+from .poly import trace_mode
+from .op import calc_mode

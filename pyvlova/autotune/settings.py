@@ -9,8 +9,3 @@ default_timing_eval_settings = {
     'number': 20,
     'min_repeat_ms': 5,
 }
-
-cuda_settings = {
-    'max_threads': 1024,
-    'max_shared_memory': 48 * 1024,
-}

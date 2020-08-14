@@ -5,13 +5,11 @@ import numpy
 import tvm
 from tvm import autotvm
 
-from pyvlova.autotune.gpu import tune_gpu_tile
-from pyvlova.autotune.settings import default_tune_eval_settings, default_timing_eval_settings
-from pyvlova.codegen.isl_to_tir import CUDANode2TIRParser, ISLNode2TIR, build_tvm_stmts
-from pyvlova.poly.gpu import gpu_tile, gpu_find_sharable_tensors
-from pyvlova.poly.poly import TensorTable, Statement, Tensor
-from pyvlova.poly.schedule_tree.tree import ScheduleTree
-from pyvlova.utils import Mode, filter_contains, slugify
+from ..autotune import tune_cuda_tile, default_tune_eval_settings, default_timing_eval_settings
+from ..codegen import CUDAISLNode2TIR, ISLNode2TIR, lower_tvm_stmt
+from ..poly import Tensor, Statement, TensorTable, ScheduleTree, cuda_tile, cuda_find_sharable_tensors
+from ..utils import Mode, filter_contains, slugify
+
 
 calc_mode = Mode()
 
@@ -179,17 +177,17 @@ class PolyTVMOp(PolyOp):
         for i in te_tensors:
             assert i.name in self.tensors
         name = self.name + '_tvm_cuda'
-        parser = self.get_parser(factory=CUDANode2TIRParser, do_shared_opt=do_shared_opt)
+        parser = self.get_parser(factory=CUDAISLNode2TIR, do_shared_opt=do_shared_opt)
         if tile_size is None:
-            # noinspection PyTypeChecker
-            tile_size, _ = tune_gpu_tile(name, self.schedule, parser, **(tune_kwargs or {}))
+            tile_size, _ = tune_cuda_tile(
+                name, self.schedule, te_tensors, parser, **(tune_kwargs or {}))
         tree = self.schedule.copy()
-        gpu_tile(tree, tile_size)
-        stmts, tensors = build_tvm_stmts(name, tree, parser, te_tensors=te_tensors)
-        assert all((i.name == j.name for i, j in zip(te_tensors, tensors)))
+        cuda_tile(tree, tile_size)
+        stmt = parser.parse(tree)
+        stmts = lower_tvm_stmt(stmt, te_tensors, name=name)
         with tvm.target.create('cuda'):
             func = tvm.build(stmts, name=name)
-        arg_map = {v.name: i for i, v in enumerate(tensors)}
+        arg_map = {v.name: i for i, v in enumerate(te_tensors)}
         self._imp['tvm_cuda'] = (func, arg_map)
         return func
 

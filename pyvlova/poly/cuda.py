@@ -5,10 +5,9 @@ from contextlib import contextmanager
 import isl
 from tvm import tir, te
 
-from pyvlova.autotune.settings import cuda_settings
-from pyvlova.poly.schedule_tree.node import SequenceNode, FilterNode, MarkNode, NodeWithSingleChild
-from pyvlova.utils import tir_load, tir_imm, tir_store, structure_unnamed_fixed_box
+from ..utils import tir_load, tir_imm, tir_store, structure_unnamed_fixed_box, cuda_settings
 from .poly import IterVarTable, Tensor, Statement, record_effective_op
+from .schedule_tree import SequenceNode, FilterNode, MarkNode, NodeWithSingleChild
 
 
 class CUDAIterVarTable(IterVarTable):
@@ -197,7 +196,7 @@ class BlockTensorUsage(Tensor):
     def _build_copy_schedule(self, cuda_var_table: CUDAIterVarTable, iter_var_table: IterVarTable, stmt: Statement):
         num_threads = cuda_var_table.axis_extents['threadIdx']
         idx = cuda_var_table.axis_idx['threadIdx']
-        total = reduce(tir.Mul, self.usage_extents(True))
+        total = tir_imm(reduce(tir.Mul, self.usage_extents(True)))
         with iter_var_table.var() as iter_var, iter_var_table.var() as extent_var:
             body = tir.For(
                 iter_var, tir_imm(0), extent_var, tir.For.Serial, 0,

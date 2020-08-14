@@ -1,11 +1,9 @@
-import topi
-from tvm import te
+from tvm import te, topi
 
-from pyvlova.op.base import ArgumentedOp, SequenceOp
-from pyvlova.op.padding import Padding
-from pyvlova.poly.poly import TensorTable, Statement, trace_mode
-from pyvlova.poly.schedule_tree.tree import ScheduleTree
-from pyvlova.utils import tir_imm
+from .base import ArgumentedOp, SequenceOp
+from .padding import Padding
+from ..poly import TensorTable, Statement, trace_mode, ScheduleTree
+from ..utils import tir_imm
 
 
 def schedule(pool_type='', **kwargs):
@@ -185,41 +183,3 @@ class AdaptivePool(PlainPool):
     topi_cuda_calc_func = topi.nn.adaptive_pool
     topi_cuda_schedule_func = lambda outs: topi.cuda.schedule_adaptive_pool(outs)
     topi_cuda_calc_ret_map = ['out']
-
-
-'''
-import tvm
-import numpy
-from .base import calc_mode
-ctx = tvm.gpu()
-x = tvm.nd.array(numpy.random.random((20, 64, 224, 224)).astype('float32'), ctx=ctx)
-maxpool = PlainPool(batch=20, channel=64, in_height=224, in_width=224,
-                    kernel_height=7, kernel_width=7, stride_height=2, stride_width=2, pool_type='max')
-with calc_mode.under('tvm_cuda_timing'):
-    maxpool.imp(tune_kwargs={'n_trial': 30})
-    # maxpool.imp(tile_size=[4, 16, 109, 109])
-    out_a = maxpool.calc(x)
-a = maxpool._imp['tvm_cuda'][0]
-with calc_mode.under('tvm_topi_cuda_timing'):
-    maxpool.imp(tune_kwargs={'n_trial': 1})
-    out_b = maxpool.calc(x)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy())
-avgpool = PlainPool(batch=20, channel=64, in_height=224, in_width=224,
-                    kernel_height=224, kernel_width=224, pool_type='avg')
-with calc_mode.under('tvm_cuda_timing'):
-    avgpool.imp(tune_kwargs={'n_trial': 1})
-    out_a = avgpool.calc(x)
-with calc_mode.under('tvm_topi_cuda_timing'):
-    avgpool.imp(tune_kwargs={'n_trial': 1})
-    out_b = avgpool.calc(x)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 1e-3)
-adpavgpool = AdaptivePool(batch=20, channel=64, in_height=224, in_width=224,
-                          out_height=1, out_width=1, pool_type='avg')
-with calc_mode.under('tvm_cuda_timing'):
-    adpavgpool.imp(tune_kwargs={'n_trial': 1})
-    out_a = adpavgpool.calc(x)
-with calc_mode.under('tvm_topi_cuda_timing'):
-    adpavgpool.imp(tune_kwargs={'n_trial': 1})
-    out_b = adpavgpool.calc(x)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 1e-3)
-'''
