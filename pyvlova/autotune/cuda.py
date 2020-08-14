@@ -5,21 +5,18 @@ import tvm
 import numpy
 from tvm import autotvm
 
-from pyvlova.autotune.builder import PolyLocalBuilder
-from pyvlova.autotune.settings import default_tune_eval_settings, cuda_settings
-from pyvlova.codegen.isl_to_tir import build_tvm_stmts, CUDANode2TIRParser
-from pyvlova.poly.gpu import gpu_tile
-from pyvlova.poly.schedule_tree.tree import ScheduleTree
-from pyvlova.utils import load_best, slugify, get_unnamed_tuples
+from .settings import default_tune_eval_settings, cuda_settings
+from ..codegen import lower_tvm_stmt
+from ..poly import cuda_tile, ScheduleTree
+from ..utils import load_best, slugify, get_unnamed_tuples
 
 
-class GPUTileConfigEntity(list):
+class CUDATileConfigEntity(list):
     def __init__(self, index, total, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.index = index
         self.total = total
 
-    @property
     def valid(self):
         return True
 
@@ -28,17 +25,16 @@ class GPUTileConfigEntity(list):
 
     @staticmethod
     def from_json_dict(d):
-        return GPUTileConfigEntity(int(d['index']), int(d['total']), list(map(int, d['tile'])))
+        return CUDATileConfigEntity(int(d['index']), int(d['total']), list(map(int, d['tile'])))
 
     def get_flatten_feature(self):
         return numpy.array(list(self), dtype=numpy.float32)
 
-    # noinspection PyMethodMayBeStatic
     def get_other_option(self):
         return {}
 
 
-class GPUTileConfigSpace(object):
+class CUDATileConfigSpace(object):
     def __init__(self, n, b):
         self.n = n
         self.b = list(b) + [n]
@@ -71,7 +67,7 @@ class GPUTileConfigSpace(object):
         return {'tile': self}
 
     def get(self, index):
-        return GPUTileConfigEntity(index, len(self), self[index])
+        return CUDATileConfigEntity(index, len(self), self[index])
 
     def __len__(self):
         return self.size()
@@ -161,14 +157,16 @@ class GPUTileConfigSpace(object):
         return self._f(k, n)
 
 
-class GPUTileTask(autotvm.task.Task):
-    def __init__(self, name, tree: ScheduleTree, parser):
+class CUDATileTask(autotvm.task.Task):
+    def __init__(self, name, tree, kernel_args, parser):
         super().__init__(name, [])
+        self.func = None
         self.tree = tree
+        self.kernel_args = kernel_args
         self.parser = parser
         box_size, lower, stride = tree.outermost_band_box()
         band_size = [-(-i // j) for i, j in zip(box_size, stride)]
-        self.config_space = GPUTileConfigSpace(cuda_settings['max_threads'], band_size)
+        self.config_space = CUDATileConfigSpace(cuda_settings['max_threads'], band_size)
         self.target = tvm.target.create('cuda')
         self.flop = 0
         self._init_flop()
@@ -186,15 +184,16 @@ class GPUTileTask(autotvm.task.Task):
 
     def instantiate(self, config):
         tree = self.tree.copy()
-        gpu_tile(tree, config)
-        return build_tvm_stmts(self.name, tree, self.parser)
+        cuda_tile(tree, config)
+        stmt = self.parser.parse(tree)
+        module = lower_tvm_stmt(stmt, self.kernel_args, name=self.name)
+        return module, self.kernel_args
 
 
-def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
-                  n_trial=40, builder=None, runner=None, tuner=None,
-                  callbacks=None) -> Tuple[GPUTileConfigEntity, float]:
-    tmp_file_name = slugify(name) + '.gpu_tile.log'
-    task = GPUTileTask(name, tree.copy(), parser)
+def tune_cuda_tile(name, tree, kernel_args, parser, n_trial=40,
+                   tuner=None, measure_option=None, callbacks=None):
+    tmp_file_name = slugify(name) + '.cuda_tile.log'
+    task = CUDATileTask(name, tree.copy(), kernel_args, parser)
 
     if n_trial > 0:
         if tuner is None:
@@ -205,20 +204,25 @@ def tune_gpu_tile(name: str, tree: ScheduleTree, parser: CUDANode2TIRParser,
         tuner.tune(
             n_trial=n_trial,
             measure_option={
-                'builder': builder or PolyLocalBuilder(),
-                'runner': runner or autotvm.LocalRunner(timeout=20, **default_tune_eval_settings),
+                'builder': autotvm.LocalBuilder(),
+                'runner': autotvm.LocalRunner(timeout=20, **default_tune_eval_settings),
+                **(measure_option or {}),
             },
             callbacks=[
-                autotvm.callback.progress_bar(n_trial, prefix=f'GPUTile {name}'),
+                autotvm.callback.progress_bar(n_trial, prefix=f'CUDATile {name}'),
                 autotvm.callback.log_to_file(tmp_file_name),
                 *(callbacks or [])
             ]
         )
 
     best, best_cost = load_best(tmp_file_name, task)
-    best = GPUTileConfigEntity.from_json_dict(best)
+    
+    if not best:
+        raise Exception('failed to build kernel')
 
-    print('GPUTile %s: best %s, best cost %.12f' % (name, repr(best), best_cost))
+    best = CUDATileConfigEntity.from_json_dict(best)
+
+    print('CUDATile %s: best %s, best cost %.12f' % (name, repr(best), best_cost))
 
     return best, best_cost
 
@@ -235,10 +239,10 @@ tree.apply_params(n=512, m=512, q=1024)
 
 
 
-new_tree = tune_gpu_tile('example', tree, parser, n_trial=80)
+new_tree = tune_cuda_tile('example', tree, parser, n_trial=80)
 print(new_tree.to_yaml())
 
-new_tree = tune_gpu_tile('example', tree, parser, tuner=autotvm.tuner.GATuner, n_trial=80)
+new_tree = tune_cuda_tile('example', tree, parser, tuner=autotvm.tuner.GATuner, n_trial=80)
 print(new_tree.to_yaml())
 
 
@@ -246,6 +250,6 @@ import logging, sys
 logging.getLogger('autotvm').setLevel(logging.DEBUG)
 logging.getLogger('autotvm').addHandler(logging.StreamHandler(sys.stdout))
 # 
-# new_tree = tune_gpu_tile('example', tree, parser, tuner=autotvm.tuner.RandomTuner)
+# new_tree = tune_cuda_tile('example', tree, parser, tuner=autotvm.tuner.RandomTuner)
 # print(new_tree.to_yaml())
 '''
