@@ -1,5 +1,6 @@
 from itertools import chain
 from typing import Dict, Iterable, Any, List, Callable
+import os
 
 import numpy
 import tvm
@@ -242,6 +243,7 @@ class PolyTVMOp(PolyOp):
 
     def _tune_topi_cuda(self, name, args, te_tensors, tune_kwargs):
         n_trial = tune_kwargs.get('n_trial', 40)
+        preserve_log = tune_kwargs.get('preserve_log', False)
         tmp_file_name = slugify(name) + '.topi_cuda.log'
         if n_trial > 0:
             task = autotvm.task.create(self.topi_cuda_task_name, args=args, target='cuda')
@@ -259,7 +261,10 @@ class PolyTVMOp(PolyOp):
                 ]
             )
         with autotvm.apply_history_best(tmp_file_name):
-            return self._build_topi_cuda(name, args, te_tensors)
+            result = self._build_topi_cuda(name, args, te_tensors)
+        if not preserve_log:
+            os.remove(tmp_file_name)
+        return result
 
     def _build_topi_cuda(self, name, args, te_tensors):
         res = type(self).topi_cuda_calc_func(*args)
