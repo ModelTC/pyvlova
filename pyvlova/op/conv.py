@@ -1,10 +1,9 @@
-import topi
+from tvm import topi
 
-from pyvlova.op.base import ArgumentedOp, OpParameter, CombinedOp
-from pyvlova.op.binary import ChannelwiseAdd
-from pyvlova.op.padding import Padding
-from pyvlova.poly.poly import TensorTable, Statement
-from pyvlova.poly.schedule_tree.tree import ScheduleTree
+from .base import ArgumentedOp, OpParameter, CombinedOp
+from .binary import ChannelwiseAdd
+from .padding import Padding
+from ..poly import TensorTable, Statement, ScheduleTree
 
 
 def schedule(**kwargs):
@@ -142,34 +141,3 @@ class Conv2d(CombinedOp):
         if self.bias_layer is not None:
             x = self.bias_layer.calc(x, self.bias)
         return x
-
-
-'''
-import tvm
-import numpy
-from .base import calc_mode
-ctx = tvm.gpu()
-x = tvm.nd.array(numpy.random.random((8, 3, 224, 224)).astype('float32'), ctx=ctx)
-import torch
-tconv1 = torch.nn.Conv2d(3, 64, 7, 2, 3, True)
-out_t = tconv1(torch.tensor(x.asnumpy())).detach().cpu().numpy()
-conv1 = Conv2d(
-    batch=8,
-    in_channel=3, in_height=224, in_width=224,
-    out_channel=64, kernel_height=7, kernel_width=7,
-    stride_height=2, stride_width=2,
-    pad_top=3, pad_bottom=3, pad_left=3, pad_right=3,
-    biased=True, name='conv1'
-)
-conv1.weight = tconv1.weight.detach().cpu().numpy()
-conv1.bias = tconv1.bias.detach().cpu().numpy()
-with calc_mode.under('tvm_cuda_timing'):
-    conv1.imp(do_shared_opt=False, tune_kwargs={'n_trial': 80})
-    out_a = conv1.calc(x)
-with calc_mode.under('tvm_topi_cuda_timing'):
-    conv1.imp(tune_kwargs={'n_trial': 80})
-    out_b = conv1.calc(x)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy(), 0.5, 1e-3)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_t, 0.5, 1e-3)
-tvm.testing.assert_allclose(out_b.asnumpy(), out_t, 0.5, 1e-3)
-'''

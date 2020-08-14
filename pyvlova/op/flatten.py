@@ -1,7 +1,7 @@
-import topi
+from tvm import topi
 
-from pyvlova.poly.poly import TensorTable
-from pyvlova.op.unary import UnaryElementwise
+from .unary import UnaryElementwise
+from ..poly import TensorTable
 
 
 class Flatten2d(UnaryElementwise):
@@ -28,20 +28,3 @@ class Flatten2d(UnaryElementwise):
 
     topi_cuda_calc_func = topi.reshape
     topi_cuda_schedule_func = topi.cuda.schedule_elemwise
-
-
-'''
-import tvm
-import numpy
-from .base import calc_mode
-ctx = tvm.gpu()
-x = tvm.nd.array(numpy.random.random((1, 64, 224, 224)).astype('float32'), ctx=ctx)
-flatten2d = Flatten2d(channel=64, height=224, width=224)
-with calc_mode.under('tvm_cuda_timing'):
-    flatten2d.imp(tune_kwargs={'n_trial': 1})
-    out_a = flatten2d.calc(x)
-with calc_mode.under('tvm_topi_cuda_timing'):
-    flatten2d.imp(tune_kwargs={'n_trial': 1})
-    out_b = flatten2d.calc(x)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy())
-'''

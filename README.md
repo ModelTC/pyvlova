@@ -5,14 +5,8 @@ A Simple Polyhedral Compiler for NN
 
 # Requirements
 
-<!--
-This project requires `astor`, `sympy`, `numpy`.
-
-And the newest `loopy` ([loopy](https://github.com/inducer/loopy)).
--->
-
-- the newest `tvm`
-- `numpy`, `pytorch`, `astor`, `sympy`
+- `tvm`
+- `numpy`, `astor`, `sympy`
 - `isl` ([ChieloNewctle/isl](https://github.com/ChieloNewctle/isl))
 
 
@@ -26,17 +20,27 @@ as the dependency for pyvlova.
 ## Requirements
 
 - `llvm` and `clang`
-- `libclang-*-dev`, such as `libclang-10-dev`, **IMPORTANT for building interface**
+- `libgmp-dev`
+- `libclang-*-dev`, such as `libclang-10-dev`, **IMPORTANT for building the python interface**
 - `automake`, `autoconf`, `libtool`
 - `pkg-config`
 
-## Build
+## Build ISL
 
-```
+```bash
 git submodule update --init --recursive --progress
 autoreconf -i
 ./configure --with-clang-prefix=/usr/lib/llvm-10    # or your llvm prefix
-make -j8
-make install
+make -j4
+sudo make install
+sudo ldconfig
 make interface/isl.py
 ```
+
+# Run tests
+
+To test operators:
+```bash
+python -m unittest test.test_op
+```
+

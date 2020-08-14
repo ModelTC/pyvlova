@@ -1,9 +1,8 @@
-import topi
+from tvm import topi
 
-from pyvlova.op.base import ArgumentedOp
-from pyvlova.poly.poly import TensorTable
-
-from pyvlova.op.unary import schedule
+from .base import ArgumentedOp
+from .unary import schedule
+from ..poly import TensorTable
 
 
 def tensors(batch=1, channel=1, height=1, width=1, **_):
@@ -70,30 +69,3 @@ class ChannelwiseAdd(BinaryChannelwise):
     @staticmethod
     def topi_cuda_calc_func(channel, x, y):
         return topi.add(x, topi.reshape(y, (channel, 1, 1)))
-
-
-'''
-import tvm
-import numpy
-from .base import calc_mode
-ctx = tvm.gpu()
-x = tvm.nd.array(numpy.random.random((1, 64, 224, 224)).astype('float32'), ctx=ctx)
-y = tvm.nd.array(numpy.random.random((1, 64, 224, 224)).astype('float32'), ctx=ctx)
-elewise_add = PlainAdd(channel=64, height=224, width=224)
-with calc_mode.under('tvm_cuda_timing'):
-    elewise_add.imp(tune_kwargs={'n_trial': 1})
-    out_a = elewise_add.calc(x, y)
-with calc_mode.under('tvm_topi_cuda_timing'):
-    elewise_add.imp(tune_kwargs={'n_trial': 1})
-    out_b = elewise_add.calc(x, y)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy())
-bias = tvm.nd.array(numpy.random.random((64, )).astype('float32'), ctx=ctx)
-plain_bias = PlainChannelwiseAdd(channel=64, height=224, width=224)
-with calc_mode.under('tvm_cuda_timing'):
-    plain_bias.imp(tune_kwargs={'n_trial': 1})
-    out_a = plain_bias.calc(x, bias)
-with calc_mode.under('tvm_topi_cuda_timing'):
-    plain_bias.imp(tune_kwargs={'n_trial': 1})
-    out_b = plain_bias.calc(x, bias)
-tvm.testing.assert_allclose(out_a.asnumpy(), out_b.asnumpy())
-'''

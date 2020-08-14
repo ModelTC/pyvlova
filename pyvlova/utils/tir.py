@@ -1,28 +1,24 @@
 from typing import Iterable
 
 import tvm
-from tvm import te, tir
+from tvm import te, tir, ir
 
 
-def tir_store(tensor: te.Tensor, index: Iterable[tir.PrimExpr], value: tir.PrimExpr) -> tir.Provide:
+def tir_store(producer, index: Iterable[tir.PrimExpr], value: tir.PrimExpr) -> tir.BufferStore:
     if not isinstance(index, Iterable):
         index = [index]
-    return tir.Provide(
-        func=tensor.op, value_index=tensor.value_index, args=list(index),
-        value=value
-    )
+    return tir.ProducerStore(producer, indices=list(index), value=value)
 
 
-def tir_load(tensor: te.Tensor, index: Iterable[tir.PrimExpr]) -> tir.Call:
+def tir_load(producer, index: Iterable[tir.PrimExpr]) -> tir.BufferLoad:
     if not isinstance(index, Iterable):
         index = [index]
-    return tir.Call(
-        func=tensor.op, value_index=tensor.value_index, args=list(index),
-        call_type=3, name=tensor.name, dtype=tensor.dtype
-    )
+    return tir.ProducerLoad(producer=producer, indices=list(index))
 
 
 def tir_imm(obj, dtype=None) -> tir.PrimExpr:
+    if isinstance(obj, tir.PrimExpr):
+        return obj
     if isinstance(obj, bool):
         return tir.IntImm(dtype=dtype or 'bool', value=obj)
     if isinstance(obj, float):
@@ -34,9 +30,13 @@ def tir_imm(obj, dtype=None) -> tir.PrimExpr:
     assert False
 
 
-def tir_sync(scope) -> tir.Call:
-    return tir.Call(
-        None, 'tvm_storage_sync',
-        tvm.runtime.convert([scope]),
-        tir.Call.Intrinsic, None, 0
+def tir_cuda_shared_sync() -> tir.Call:
+    return tir.Call(None, 'tir.tvm_storage_sync', tvm.runtime.convert(['shared']))
+
+
+def tir_thread_extent_attr(iter_var, extent=0, body=None):
+    extent = tir_imm(extent)
+    return tir.AttrStmt(
+        node=iter_var, attr_key='thread_extent',
+        value=extent, body=body
     )

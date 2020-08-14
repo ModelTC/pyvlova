@@ -1,17 +1,16 @@
 from itertools import chain
 from typing import Dict, Iterable, Any, List, Callable
+import os
 
 import numpy
 import tvm
 from tvm import autotvm
 
-from pyvlova.autotune.gpu import tune_gpu_tile
-from pyvlova.autotune.settings import default_tune_eval_settings, default_timing_eval_settings
-from pyvlova.codegen.isl_to_tir import CUDANode2TIRParser, ISLNode2TIR, build_tvm_stmts
-from pyvlova.poly.gpu import gpu_tile, gpu_find_sharable_tensors
-from pyvlova.poly.poly import TensorTable, Statement, Tensor
-from pyvlova.poly.schedule_tree.tree import ScheduleTree
-from pyvlova.utils import Mode, filter_contains, slugify
+from ..autotune import tune_cuda_tile, default_tune_eval_settings, default_timing_eval_settings
+from ..codegen import CUDAISLNode2TIR, ISLNode2TIR, lower_tvm_stmt
+from ..poly import Tensor, Statement, TensorTable, ScheduleTree, cuda_tile, cuda_find_sharable_tensors
+from ..utils import Mode, filter_contains, slugify
+
 
 calc_mode = Mode()
 
@@ -179,17 +178,17 @@ class PolyTVMOp(PolyOp):
         for i in te_tensors:
             assert i.name in self.tensors
         name = self.name + '_tvm_cuda'
-        parser = self.get_parser(factory=CUDANode2TIRParser, do_shared_opt=do_shared_opt)
+        parser = self.get_parser(factory=CUDAISLNode2TIR, do_shared_opt=do_shared_opt)
         if tile_size is None:
-            # noinspection PyTypeChecker
-            tile_size, _ = tune_gpu_tile(name, self.schedule, parser, **(tune_kwargs or {}))
+            tile_size, _ = tune_cuda_tile(
+                name, self.schedule, te_tensors, parser, **(tune_kwargs or {}))
         tree = self.schedule.copy()
-        gpu_tile(tree, tile_size)
-        stmts, tensors = build_tvm_stmts(name, tree, parser, te_tensors=te_tensors)
-        assert all((i.name == j.name for i, j in zip(te_tensors, tensors)))
+        cuda_tile(tree, tile_size)
+        stmt = parser.parse(tree)
+        stmts = lower_tvm_stmt(stmt, te_tensors, name=name)
         with tvm.target.create('cuda'):
             func = tvm.build(stmts, name=name)
-        arg_map = {v.name: i for i, v in enumerate(tensors)}
+        arg_map = {v.name: i for i, v in enumerate(te_tensors)}
         self._imp['tvm_cuda'] = (func, arg_map)
         return func
 
@@ -244,6 +243,7 @@ class PolyTVMOp(PolyOp):
 
     def _tune_topi_cuda(self, name, args, te_tensors, tune_kwargs):
         n_trial = tune_kwargs.get('n_trial', 40)
+        preserve_log = tune_kwargs.get('preserve_log', False)
         tmp_file_name = slugify(name) + '.topi_cuda.log'
         if n_trial > 0:
             task = autotvm.task.create(self.topi_cuda_task_name, args=args, target='cuda')
@@ -261,7 +261,10 @@ class PolyTVMOp(PolyOp):
                 ]
             )
         with autotvm.apply_history_best(tmp_file_name):
-            return self._build_topi_cuda(name, args, te_tensors)
+            result = self._build_topi_cuda(name, args, te_tensors)
+        if not preserve_log:
+            os.remove(tmp_file_name)
+        return result
 
     def _build_topi_cuda(self, name, args, te_tensors):
         res = type(self).topi_cuda_calc_func(*args)
@@ -272,7 +275,6 @@ class PolyTVMOp(PolyOp):
             if te_tensors[i].name in named_res:
                 te_tensors[i] = named_res[te_tensors[i].name]
         s = type(self).topi_cuda_schedule_func(res)
-        # print(tvm.lower(s, te_tensors, name=slugify(name)))
         func = tvm.build(s, te_tensors, name=slugify(name))
         return func
 

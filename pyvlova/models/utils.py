@@ -1,8 +1,4 @@
-from pyvlova.op.base import BaseOp
-from pyvlova.op.conv import Conv2d
-from pyvlova.op.flatten import Flatten2d
-from pyvlova.op.grouped_conv import GroupedConv2d
-from pyvlova.op.pool import Pool, AdaptivePool
+from ..op import BaseOp, Conv2d, Flatten2d, GroupedConv2d, Pool, AdaptivePool
 
 
 def shape2d(in_shape):
@@ -75,5 +71,3 @@ def mock(cls, name, prev):
         else:
             assert False
     return cls(name=name, **in_shape)
-
-
