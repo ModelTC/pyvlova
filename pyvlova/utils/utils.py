@@ -1,3 +1,5 @@
+# Copyright 2020 Jiang Shenghu
+# SPDX-License-Identifier: Apache-2.0
 import re
 from collections import Mapping
 from functools import reduce

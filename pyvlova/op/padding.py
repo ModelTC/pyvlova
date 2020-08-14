@@ -1,3 +1,5 @@
+# Copyright 2020 Jiang Shenghu
+# SPDX-License-Identifier: Apache-2.0
 from tvm import topi
 
 from .base import ArgumentedOp

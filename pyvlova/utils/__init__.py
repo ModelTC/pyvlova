@@ -1,3 +1,5 @@
+# Copyright 2020 Jiang Shenghu
+# SPDX-License-Identifier: Apache-2.0
 from .utils import filter_contains, slugify, sizeof
 from .mode import Mode
 from .isl import get_unnamed_tuples, get_named_tuples, \

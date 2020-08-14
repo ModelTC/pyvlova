@@ -1,3 +1,5 @@
+# Copyright 2020 Jiang Shenghu
+# SPDX-License-Identifier: Apache-2.0
 from functools import reduce
 from typing import Tuple
 import os

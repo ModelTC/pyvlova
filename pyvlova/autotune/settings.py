@@ -1,3 +1,5 @@
+# Copyright 2020 Jiang Shenghu
+# SPDX-License-Identifier: Apache-2.0
 default_tune_eval_settings = {
     'repeat': 1,
     'number': 4,

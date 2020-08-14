@@ -1,3 +1,5 @@
+# Copyright 2020 Jiang Shenghu
+# SPDX-License-Identifier: Apache-2.0
 import unittest
 
 from pyvlova.autotune.cuda import tune_cuda_tile

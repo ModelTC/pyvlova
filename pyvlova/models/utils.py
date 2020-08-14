@@ -1,3 +1,5 @@
+# Copyright 2020 Jiang Shenghu
+# SPDX-License-Identifier: Apache-2.0
 from ..op import BaseOp, Conv2d, Flatten2d, GroupedConv2d, Pool, AdaptivePool
 
 

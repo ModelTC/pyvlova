@@ -1,3 +1,5 @@
+# Copyright 2020 Jiang Shenghu
+# SPDX-License-Identifier: Apache-2.0
 from .base import calc_mode, OpParameter, BaseOp, CombinedOp, SequenceOp, PolyOp, PolyTVMOp, ArgumentedOp
 from .binary import BinaryChannelwise, BinaryElementwise, ElementwiseAdd, ChannelwiseAdd
 from .conv import PlainConv2d, Conv2d

@@ -1,3 +1,5 @@
+# Copyright 2020 Jiang Shenghu
+# SPDX-License-Identifier: Apache-2.0
 from itertools import chain
 from typing import Dict, Iterable, Any, List, Callable
 import os

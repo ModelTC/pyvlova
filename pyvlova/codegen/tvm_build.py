@@ -1,3 +1,5 @@
+# Copyright 2020 Jiang Shenghu
+# SPDX-License-Identifier: Apache-2.0
 import tvm
 from tvm.te import schedule
 from tvm.driver import build_module

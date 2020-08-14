@@ -1,3 +1,5 @@
+# Copyright 2020 Jiang Shenghu
+# SPDX-License-Identifier: Apache-2.0
 from .utils import *
 from ..op import CombinedOp, SequenceOp, ElementwiseAdd, Linear, ReLU6
 
