@@ -3,6 +3,12 @@
 A Simple Polyhedral Compiler for NN
 
 
+# Benchmark
+
+- [ResNet-18](doc/benchmark/resnet18.md)
+- [MobileNetV2](doc/benchmark/mobilenetv2.md)
+
+
 # Requirements
 
 - `tvm`

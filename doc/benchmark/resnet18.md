@@ -1,0 +1,97 @@
+# Benchmark Result for Resnet-18
+
+Environment:
+- GPU: GeForce GTX 1060
+- The number of trials: 128
+
+
+Op name | Pyvlova Running Time (us) | TOPI Running Time (us) | Pyvlova Tuning Time (s) | TOPI Tuning Time (s)
+-----------------
+resnet18.conv1.pad | 9.243 | 7.230 | 75.680 | -
+resnet18.conv1.conv | 593.283 | 170.263 | 84.370 | 500.530
+resnet18.conv1.bias_layer | 59.774 | 42.433 | 76.930 | -
+resnet18.relu1 | 43.619 | 41.694 | 76.380 | -
+resnet18.maxpool.pad | 48.045 | 44.185 | 81.000 | -
+resnet18.maxpool.pool | 28.794 | 29.047 | 76.150 | -
+resnet18.layer1.0.conv1.pad | 13.354 | 10.861 | 78.540 | -
+resnet18.layer1.0.conv1.conv | 452.076 | 88.885 | 82.460 | 519.530
+resnet18.layer1.0.conv1.bias_layer | 11.764 | 7.733 | 76.400 | -
+resnet18.layer1.0.relu1 | 9.573 | 6.759 | 75.830 | -
+resnet18.layer1.0.conv2.pad | 13.318 | 10.999 | 77.850 | -
+resnet18.layer1.0.conv2.conv | 437.529 | 116.352 | 81.770 | 550.640
+resnet18.layer1.0.conv2.bias_layer | 13.197 | 7.665 | 74.850 | -
+resnet18.layer1.0.eltwise_add | 17.197 | 16.681 | 75.330 | -
+resnet18.layer1.0.relu2 | 9.539 | 6.609 | 74.820 | -
+resnet18.layer1.1.conv1.pad | 12.903 | 11.722 | 78.350 | -
+resnet18.layer1.1.conv1.conv | 414.566 | 107.174 | 81.360 | 533.150
+resnet18.layer1.1.conv1.bias_layer | 12.508 | 7.362 | 76.940 | -
+resnet18.layer1.1.relu1 | 8.367 | 6.767 | 73.320 | -
+resnet18.layer1.1.conv2.pad | 12.158 | 11.709 | 77.500 | -
+resnet18.layer1.1.conv2.conv | 415.624 | 106.238 | 82.040 | 515.490
+resnet18.layer1.1.conv2.bias_layer | 11.909 | 7.210 | 74.600 | -
+resnet18.layer1.1.eltwise_add | 16.836 | 16.538 | 76.300 | -
+resnet18.layer1.1.relu2 | 8.915 | 6.740 | 74.320 | -
+resnet18.layer2.0.conv1.pad | 12.204 | 11.151 | 79.390 | -
+resnet18.layer2.0.conv1.conv | 261.625 | 117.496 | 80.240 | 505.290
+resnet18.layer2.0.conv1.bias_layer | 5.884 | 3.067 | 75.670 | -
+resnet18.layer2.0.relu1 | 3.420 | 2.587 | 74.350 | -
+resnet18.layer2.0.conv2.pad | 5.587 | 4.582 | 79.230 | -
+resnet18.layer2.0.conv2.conv | 453.010 | 207.162 | 80.260 | 542.740
+resnet18.layer2.0.conv2.bias_layer | 6.708 | 3.070 | 74.880 | -
+resnet18.layer2.downsample.conv | 27.711 | 16.665 | 80.140 | 491.940
+resnet18.layer2.downsample.bias_layer | 5.315 | 3.059 | 75.210 | -
+resnet18.layer2.0.eltwise_add | 4.536 | 2.927 | 75.520 | -
+resnet18.layer2.0.relu2 | 3.615 | 2.597 | 74.450 | -
+resnet18.layer2.1.conv1.pad | 5.451 | 4.587 | 79.260 | -
+resnet18.layer2.1.conv1.conv | 461.919 | 137.789 | 81.230 | 491.230
+resnet18.layer2.1.conv1.bias_layer | 4.915 | 3.065 | 76.430 | -
+resnet18.layer2.1.relu1 | 5.030 | 2.589 | 85.560 | -
+resnet18.layer2.1.conv2.pad | 5.797 | 4.594 | 92.370 | -
+resnet18.layer2.1.conv2.conv | 463.948 | 169.947 | 96.300 | 538.020
+resnet18.layer2.1.conv2.bias_layer | 5.509 | 3.056 | 87.100 | -
+resnet18.layer2.1.eltwise_add | 3.343 | 2.945 | 74.620 | -
+resnet18.layer2.1.relu2 | 3.620 | 2.611 | 78.730 | -
+resnet18.layer3.0.conv1.pad | 5.785 | 4.589 | 78.750 | -
+resnet18.layer3.0.conv1.conv | 282.390 | 126.730 | 79.290 | 443.060
+resnet18.layer3.0.conv1.bias_layer | 4.049 | 2.003 | 74.200 | -
+resnet18.layer3.0.relu1 | 2.603 | 1.879 | 73.630 | -
+resnet18.layer3.0.conv2.pad | 4.048 | 2.669 | 78.590 | -
+resnet18.layer3.0.conv2.conv | 523.266 | 212.967 | 80.840 | 484.640
+resnet18.layer3.0.conv2.bias_layer | 3.800 | 2.022 | 74.410 | -
+resnet18.layer3.downsample.conv | 28.270 | 22.015 | 78.510 | 423.850
+resnet18.layer3.downsample.bias_layer | 3.303 | 2.014 | 74.170 | -
+resnet18.layer3.0.eltwise_add | 2.993 | 2.099 | 74.500 | -
+resnet18.layer3.0.relu2 | 2.478 | 1.884 | 73.270 | -
+resnet18.layer3.1.conv1.pad | 3.165 | 2.646 | 77.450 | -
+resnet18.layer3.1.conv1.conv | 504.147 | 167.278 | 80.080 | 464.010
+resnet18.layer3.1.conv1.bias_layer | 4.212 | 2.087 | 74.620 | -
+resnet18.layer3.1.relu1 | 2.809 | 1.887 | 73.600 | -
+resnet18.layer3.1.conv2.pad | 4.225 | 2.661 | 77.570 | -
+resnet18.layer3.1.conv2.conv | 570.701 | 242.767 | 79.870 | 487.890
+resnet18.layer3.1.conv2.bias_layer | 3.757 | 2.089 | 74.660 | -
+resnet18.layer3.1.eltwise_add | 2.888 | 2.101 | 73.940 | -
+resnet18.layer3.1.relu2 | 2.868 | 1.958 | 73.800 | -
+resnet18.layer4.0.conv1.pad | 2.220 | 2.650 | 77.430 | -
+resnet18.layer4.0.conv1.conv | 480.366 | 256.125 | 78.220 | 343.600
+resnet18.layer4.0.conv1.bias_layer | 2.718 | 1.821 | 73.080 | -
+resnet18.layer4.0.relu1 | 2.285 | 1.734 | 72.220 | -
+resnet18.layer4.0.conv2.pad | 2.509 | 2.439 | 76.280 | -
+resnet18.layer4.0.conv2.conv | 1062.592 | 312.967 | 77.830 | 335.320
+resnet18.layer4.0.conv2.bias_layer | 2.931 | 1.683 | 73.160 | -
+resnet18.layer4.downsample.conv | 34.528 | 35.877 | 77.520 | 219.990
+resnet18.layer4.downsample.bias_layer | 2.589 | 1.685 | 72.950 | -
+resnet18.layer4.0.eltwise_add | 1.677 | 1.763 | 73.020 | -
+resnet18.layer4.0.relu2 | 1.557 | 1.572 | 72.340 | -
+resnet18.layer4.1.conv1.pad | 3.717 | 2.427 | 77.100 | -
+resnet18.layer4.1.conv1.conv | 949.309 | 477.261 | 79.070 | 290.580
+resnet18.layer4.1.conv1.bias_layer | 3.128 | 1.685 | 73.490 | -
+resnet18.layer4.1.relu1 | 2.141 | 1.584 | 73.080 | -
+resnet18.layer4.1.conv2.pad | 2.534 | 2.428 | 76.340 | -
+resnet18.layer4.1.conv2.conv | 713.150 | 526.853 | 78.740 | 289.240
+resnet18.layer4.1.conv2.bias_layer | 2.580 | 1.690 | 73.150 | -
+resnet18.layer4.1.eltwise_add | 1.644 | 1.773 | 72.870 | -
+resnet18.layer4.1.relu2 | 1.926 | 1.585 | 72.720 | -
+resnet18.avgpool.pool | 2.088 | 7.583 | 72.060 | -
+resnet18.flatten | 1.472 | 1.492 | 68.390 | -
+resnet18.linear.linear | 23.205 | 15.788 | 75.000 | 6.960
+**Total** | 9687.857 | 4063.218 | 6705.840 | 8977.700
