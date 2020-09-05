@@ -4,9 +4,9 @@ Environment:
 - GPU: GeForce GTX 1060
 - The number of trials: 128
 
-
 Op name | Pyvlova Running Time (us) | TOPI Running Time (us) | Pyvlova Tuning Time (s) | TOPI Tuning Time (s)
------------------
+------- | ------------------------- | ---------------------- | ----------------------- | --------------------
+**Total** | 9687.857 | 4063.218 | 6705.840 | 8977.700
 resnet18.conv1.pad | 9.243 | 7.230 | 75.680 | -
 resnet18.conv1.conv | 593.283 | 170.263 | 84.370 | 500.530
 resnet18.conv1.bias_layer | 59.774 | 42.433 | 76.930 | -
@@ -94,4 +94,3 @@ resnet18.layer4.1.relu2 | 1.926 | 1.585 | 72.720 | -
 resnet18.avgpool.pool | 2.088 | 7.583 | 72.060 | -
 resnet18.flatten | 1.472 | 1.492 | 68.390 | -
 resnet18.linear.linear | 23.205 | 15.788 | 75.000 | 6.960
-**Total** | 9687.857 | 4063.218 | 6705.840 | 8977.700

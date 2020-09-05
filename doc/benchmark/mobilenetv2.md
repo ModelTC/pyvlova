@@ -4,9 +4,9 @@ Environment:
 - GPU: GeForce GTX 1060
 - The number of trials: 128
 
-
 Op name | Pyvlova Running Time (us) | TOPI Running Time (us) | Pyvlova Tuning Time (s) | TOPI Tuning Time (s)
------------------
+------- | ------------------------- | ---------------------- | ----------------------- | --------------------
+**Total** | 2486.594 | 1681.494 | 9222.760 | 19898.420
 mobilenet.features[0].conv.pad | 9.246 | 6.916 | 78.050 | -
 mobilenet.features[0].conv.conv | 108.386 | 80.174 | 82.810 | 519.260
 mobilenet.features[0].relu | 22.337 | 21.678 | 75.810 | -
@@ -125,4 +125,3 @@ mobilenet.features[18].relu | 3.616 | 2.255 | 76.230 | -
 mobilenet.pool | 2.165 | 2.664 | 75.210 | -
 mobilenet.flatten | 1.505 | 1.531 | 72.290 | -
 mobilenet.linear.linear | 87.874 | 37.835 | 74.130 | 11.180
-**Total** | 2486.594 | 1681.494 | 9222.760 | 19898.420
