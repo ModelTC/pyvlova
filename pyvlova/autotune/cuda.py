@@ -162,6 +162,7 @@ class CUDATileConfigSpace(object):
 
 class CUDATileTask(autotvm.task.Task):
     def __init__(self, name, tree, kernel_args, parser):
+        autotvm.task.template(name, lambda: None)
         super().__init__(name, [])
         self.func = None
         self.tree = tree
