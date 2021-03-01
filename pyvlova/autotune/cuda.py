@@ -171,7 +171,7 @@ class CUDATileTask(autotvm.task.Task):
         box_size, lower, stride = tree.outermost_band_box()
         band_size = [-(-i // j) for i, j in zip(box_size, stride)]
         self.config_space = CUDATileConfigSpace(cuda_settings['max_threads'], band_size)
-        self.target = tvm.target.create('cuda')
+        self.target = tvm.target.Target('cuda')
         self.flop = 0
         self._init_flop()
 
@@ -223,6 +223,8 @@ def tune_cuda_tile(name, tree, kernel_args, parser, n_trial=40,
         )
 
     best, best_cost = load_best(tmp_file_name, task)
+
+    import gc; gc.collect()
     
     if not best:
         raise Exception('failed to build kernel')
