@@ -168,7 +168,7 @@ class PolyTVMOp(PolyOp):
         tree = self.schedule.copy()
         stmts, tensors = build_tvm_stmts(name, tree, parser, te_tensors=te_tensors)
         assert all((i.name == j.name for i, j in zip(te_tensors, tensors)))
-        with tvm.target.create('llvm'):
+        with tvm.target.Target('llvm'):
             func = tvm.build(stmts, name=name)
         arg_map = {v.name: i for i, v in enumerate(tensors)}
         self._imp['tvm_llvm'] = (func, arg_map)
@@ -188,7 +188,7 @@ class PolyTVMOp(PolyOp):
         cuda_tile(tree, tile_size)
         stmt = parser.parse(tree)
         stmts = lower_tvm_stmt(stmt, te_tensors, name=name)
-        with tvm.target.create('cuda'):
+        with tvm.target.Target('cuda'):
             func = tvm.build(stmts, name=name)
         arg_map = {v.name: i for i, v in enumerate(te_tensors)}
         self._imp['tvm_cuda'] = (func, arg_map)
@@ -288,7 +288,7 @@ class PolyTVMOp(PolyOp):
             assert i.name in self.tensors
         ts = {i.name: i for i in te_tensors}
         name = self.name + '_tvm_topi_cuda'
-        with tvm.target.create('cuda'):
+        with tvm.target.Target('cuda'):
             args = self.topi_cuda_args(**ts)
             if self.topi_cuda_task_name:
                 func = self._tune_topi_cuda(name, args, te_tensors, tune_kwargs)

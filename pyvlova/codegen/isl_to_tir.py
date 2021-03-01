@@ -162,7 +162,7 @@ class ISLNode2TIR(ISLNodeParser):
             return tir.LetStmt(
                 extent_var, extent,
                 tir.For(
-                    iter_var, tir.IntImm('int32', 0), extent_var, for_type, 0,
+                    iter_var, tir.IntImm('int32', 0), extent_var, for_type,
                     tir.LetStmt(
                         c_var, tir.Add(tir.Mul(iter_var, step), lower),
                         self.parse(node.body(), node)
@@ -197,7 +197,7 @@ class ISLNode2TIR(ISLNodeParser):
             else_node = None
         if not then_node and not else_node:
             return None
-        return tir.IfThenElse(condition=cond, then_case=then_node, else_case=else_node)
+        return tir.IfThenElse(cond, then_node, else_node)
 
 
 class CUDAISLNode2TIR(ISLNode2TIR):

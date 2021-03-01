@@ -1,6 +1,6 @@
-[submodule "isl"]
-	path = isl
-	url = https://github.com/ChieloNewctle/isl
-[submodule "tvm"]
-	path = incubator-tvm
-	url = https://github.com/apache/incubator-tvm
+[submodule "3rdparty/tvm"]
+	path = 3rdparty/tvm
+	url = https://github.com/ChieloNewctle/tvm.git
+[submodule "3rdparty/isl"]
+	path = 3rdparty/isl
+	url = https://github.com/ChieloNewctle/isl.git

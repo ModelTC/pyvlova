@@ -201,7 +201,7 @@ class BlockTensorUsage(Tensor):
         total = tir_imm(reduce(tir.Mul, self.usage_extents(True)))
         with iter_var_table.var() as iter_var, iter_var_table.var() as extent_var:
             body = tir.For(
-                iter_var, tir_imm(0), extent_var, tir.For.Serial, 0,
+                iter_var, tir_imm(0), extent_var, tir.ForKind.SERIAL,
                 stmt.to_tvm(None, iter_var * num_threads + idx)
             )
             body = tir.LetStmt(extent_var, (total - 1 - idx) // num_threads + 1, body)
