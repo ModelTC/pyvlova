@@ -237,7 +237,9 @@ class NodeWithSingleChild(Node):
             kwargs['children'] = list()
         if 'child' in kwargs:
             assert not kwargs['children']
-            kwargs['children'] = [kwargs.pop('child')]
+            child = kwargs.pop('child')
+            if child:
+                kwargs['children'] = [child]
         super().__init__(**kwargs)
 
     @property
