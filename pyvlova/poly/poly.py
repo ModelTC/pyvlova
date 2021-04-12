@@ -10,8 +10,9 @@ from typing import Dict, List, Optional, Tuple, Set, Iterable
 
 import sympy
 import tvm
-import isl
 from tvm import te, tir
+
+from .._ext import isl
 
 from ..utils import Mode, tir_load, tir_store, tir_imm, sizeof, parse_sympy_to_isl_repr
 

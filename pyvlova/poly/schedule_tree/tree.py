@@ -6,8 +6,9 @@ from collections import defaultdict
 from functools import reduce
 from typing import Any, Mapping, Optional
 
-import isl
 import yaml
+
+from .._ext import isl
 
 from .node import Node, NodeWithSingleChild, BandNode, DomainNode, ExtensionNode, SequenceNode, FilterNode, MarkNode
 

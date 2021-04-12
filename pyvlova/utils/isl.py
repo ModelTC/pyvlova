@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import re
 
-import isl
+from .._ext import isl
 
 
 def get_named_tuples(obj):

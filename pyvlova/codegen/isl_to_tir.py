@@ -9,7 +9,8 @@ import re
 
 import tvm
 from tvm import tir
-import isl
+
+from .._ext import isl
 
 from ..poly import cuda_find_sharable_tensors, BlockTensorUsage, IterVarTable, CUDAIterVarTable, TensorTable, Statement, Tensor, ScheduleTree, check_cuda_tiled
 from ..utils import tir_imm, slugify, tir_cuda_shared_sync, tir_thread_extent_attr
@@ -208,7 +209,7 @@ class CUDAISLNode2TIR(ISLNode2TIR):
         self.set_shared_tensors(shared_tensors)
         self.has_side_effect = has_side_effect
         self.do_shared_opt = do_shared_opt
-    
+
     def set_shared_tensors(self, shared_tensors):
         if shared_tensors:
             self.shared_tensors: List[BlockTensorUsage] = list(shared_tensors)
@@ -256,7 +257,7 @@ class CUDAISLNode2TIR(ISLNode2TIR):
             with self.cuda_iter_var_table.axis(axis, 1) as iter_var:
                 b = tir_thread_extent_attr(iter_var, extent=1, body=b)
         return b
-    
+
     def parse_cuda_axis(self, node, parent):
         _, axis = self.mark_stack[-1].rsplit('=', 1)
 

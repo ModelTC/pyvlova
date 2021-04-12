@@ -1,1 +1,2 @@
-recursive-exclude test *
+include LICENSE README.md requirements.txt
+recursive-include pyvlova *

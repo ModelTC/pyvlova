@@ -4,8 +4,9 @@ from collections import defaultdict
 from functools import reduce
 from contextlib import contextmanager
 
-import isl
 from tvm import tir, te
+
+from .._ext import isl
 
 from ..utils import tir_load, tir_imm, tir_store, structure_unnamed_fixed_box, cuda_settings
 from .poly import IterVarTable, Tensor, Statement, record_effective_op
@@ -141,7 +142,7 @@ class BlockTensorUsage(Tensor):
             for i, j, k in zip(extents, self.origin.shape, self.offset_tvm_repr)
         ]
         return extents
-    
+
     def usage_extents_and_stride(self):
         extents = self.usage_extents(True)
         idx_strides = list(extents) + [1]
@@ -160,7 +161,7 @@ class BlockTensorUsage(Tensor):
         assert self.offset_ast
         self.offset_tvm_repr = list(map(expr_parser.parse, self.offset_ast))
         self.offset = self.offset_tvm_repr
-    
+
     def build_tir_realize(self, scope='shared', body=None):
         return super().build_tir_realize(scope=scope, body=body)
 

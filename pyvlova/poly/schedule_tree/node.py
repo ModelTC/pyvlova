@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 from typing import Dict, List, Any, Type, Mapping, Optional, Iterable, Callable
 
-import isl
+from .._ext import isl
 
 from pyvlova.utils import get_unnamed_tuples
 
