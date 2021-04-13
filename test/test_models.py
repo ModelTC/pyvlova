@@ -3,6 +3,7 @@
 import unittest
 
 import tvm
+import tvm.testing
 import numpy
 
 from pyvlova.models import *
@@ -14,10 +15,10 @@ n_trials = 8
 
 class TestModels(unittest.TestCase):
     def setUp(self):
-        self.ctx = tvm.gpu()
-    
+        self.device = tvm.gpu()
+
     def _get_array(self, shape):
-        return tvm.nd.array(numpy.random.random(shape).astype('float32'), ctx=self.ctx)
+        return tvm.nd.array(numpy.random.random(shape).astype('float32'), device=self.device)
 
     def test_resnet18(self):
         model = resnet18()
