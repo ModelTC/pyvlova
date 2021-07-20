@@ -3,6 +3,7 @@
 import unittest
 
 import tvm
+import tvm.testing
 import numpy
 
 from pyvlova.op import *
@@ -13,11 +14,11 @@ n_trials = 8
 
 class TestOp(unittest.TestCase):
     def setUp(self):
-        self.ctx = tvm.gpu()
-    
+        self.device = tvm.gpu()
+
     def _get_array(self, shape):
-        return tvm.nd.array(numpy.random.random(shape).astype('float32'), ctx=self.ctx)
-    
+        return tvm.nd.array(numpy.random.random(shape).astype('float32'), device=self.device)
+
     def _cuda_test_op(self, op, rtol=1e-7, atol=1e-7):
         args = []
         for name in op.inputs:

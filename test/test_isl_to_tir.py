@@ -3,6 +3,7 @@
 import unittest
 
 import tvm
+import tvm.testing
 import numpy as np
 
 from pyvlova.poly import ScheduleTree, cuda_tile
@@ -67,19 +68,19 @@ for (_i0, 0, _isl_c0_extent) {
         stmt = parser.parse(tree)
         self._check_matmul_kernel(stmt, tensor_table, tvm.gpu(), target='cuda')
 
-    def _check_matmul_kernel(self, stmt, tensor_table, ctx, target=None):
+    def _check_matmul_kernel(self, stmt, tensor_table, device, target=None):
         args = [tensor_table['A'].te_tensor, tensor_table['B'].te_tensor, tensor_table['C'].te_tensor]
         module = lower_tvm_stmt(stmt, args)
         kernel = tvm.build(module, target=target)
         a_np = np.random.uniform(size=tensor_table['A'].shape).astype(tensor_table['A'].dtype)
         b_np = np.random.uniform(size=tensor_table['B'].shape).astype(tensor_table['B'].dtype)
         c_np = a_np @ b_np
-        a = tvm.nd.array(a_np, ctx)
-        b = tvm.nd.array(b_np, ctx)
-        c = tvm.nd.empty(c_np.shape, ctx=ctx)
+        a = tvm.nd.array(a_np, device)
+        b = tvm.nd.array(b_np, device)
+        c = tvm.nd.empty(c_np.shape, device=device)
         kernel(a, b, c)
         tvm.testing.assert_allclose(c_np, c.asnumpy(), rtol=1e-5)
-        evaluator = kernel.time_evaluator(kernel.entry_name, ctx, number=20)
+        evaluator = kernel.time_evaluator(kernel.entry_name, device, number=20)
         evaluator(a, b, c)
 
 

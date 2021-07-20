@@ -225,7 +225,7 @@ def tune_cuda_tile(name, tree, kernel_args, parser, n_trial=40,
     best, best_cost = load_best(tmp_file_name, task)
 
     import gc; gc.collect()
-    
+
     if not best:
         raise Exception('failed to build kernel')
 

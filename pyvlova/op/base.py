@@ -32,7 +32,7 @@ class OpParameter(object):
         value = getattr(instance, self.hidden_attr, None)
         if 'tvm' in calc_mode.mode:
             if 'cuda' in calc_mode.mode:
-                return tvm.nd.array(value, ctx=tvm.gpu())
+                return tvm.nd.array(value, device=tvm.gpu())
             return tvm.nd.array(value)
         return value
 
@@ -132,9 +132,9 @@ class PolyOp(BaseOp):
 
 
 class PolyTVMOp(PolyOp):
-    def _calc_on_tvm(self, *args, ctx=None, _imp_name=None, **kwargs):
+    def _calc_on_tvm(self, *args, device=None, _imp_name=None, **kwargs):
         assert len(args) <= len(self.inputs)
-        assert ctx and _imp_name
+        assert device and _imp_name
         if _imp_name not in self._imp:
             getattr(self, 'imp_' + _imp_name)()
 
@@ -145,7 +145,7 @@ class PolyTVMOp(PolyOp):
             assert isinstance(kwargs[i], tvm.nd.NDArray)
         for i in self.outputs:
             if i not in kwargs:
-                kwargs[i] = tvm.nd.empty(self.tensors[i].shape, self.tensors[i].dtype, ctx=ctx)
+                kwargs[i] = tvm.nd.empty(self.tensors[i].shape, self.tensors[i].dtype, device=device)
 
         imp, arg_map = self._imp[_imp_name]
         imp_args = [None] * len(arg_map)
@@ -198,12 +198,12 @@ class PolyTVMOp(PolyOp):
         if key.startswith('calc_tvm_'):
             name = key[len('calc_'):]
             if 'cuda' in name or 'nvptx' in name or 'gpu' in name:
-                default_ctx = tvm.gpu()
+                default_device = tvm.gpu()
             else:
-                default_ctx = tvm.cpu()
+                default_device = tvm.cpu()
 
-            def calc(*args, ctx=None, **kwargs):
-                return self._calc_on_tvm(*args, ctx=ctx or default_ctx, _imp_name=name, **kwargs)
+            def calc(*args, device=None, **kwargs):
+                return self._calc_on_tvm(*args, device=device or default_device, _imp_name=name, **kwargs)
 
             setattr(self, key, calc)
             return calc
@@ -217,12 +217,12 @@ class PolyTVMOp(PolyOp):
                 func, arg_map = self._imp['tvm_' + target]
 
                 def timing(*t_args, **t_kwargs):
-                    ctx = None
+                    device = None
                     for i in chain(t_args, t_kwargs.values()):
                         if isinstance(i, tvm.nd.NDArray):
-                            ctx = i.ctx
+                            device = i.device
                             break
-                    evaluator = func.time_evaluator(func.entry_name, ctx, **default_timing_eval_settings)
+                    evaluator = func.time_evaluator(func.entry_name, device, **default_timing_eval_settings)
                     t = evaluator(*t_args, **t_kwargs).mean
                     print(self.name, 'tvm timing', target, '%.9f us' % (t * 1e6))
                     timing.t = t
