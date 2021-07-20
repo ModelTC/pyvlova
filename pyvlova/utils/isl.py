@@ -18,7 +18,10 @@ def get_unnamed_tuples(obj):
     obj = str(obj)
     res = re.findall(r'\[(.*?)\]', str(obj))
     for i in range(len(res)):
-        res[i] = list(map(str.strip, res[i].split(',')))
+        if res[i]:
+            res[i] = list(map(str.strip, res[i].split(',')))
+        else:
+            res[i] = list()
     return res
 
 

@@ -10,12 +10,15 @@ from .sympy2isl import parse_sympy_to_isl_repr, constraints_to_isl_repr, ISLRepr
 
 
 def __get_cuda_settings():
-    import tvm
-    ctx = tvm.context('cuda')
-    return {
-        'max_threads': ctx.max_threads_per_block,
-        'max_shared_memory': ctx.max_shared_memory_per_block,
-    }
+    try:
+        import tvm
+        ctx = tvm.cuda()
+        return {
+            'max_threads': ctx.max_threads_per_block,
+            'max_shared_memory': ctx.max_shared_memory_per_block,
+        }
+    except tvm.TVMError:
+        return {}
 
 
 cuda_settings = __get_cuda_settings()
