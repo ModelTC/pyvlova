@@ -1,24 +1,21 @@
 # Copyright 2020 Jiang Shenghu
 # SPDX-License-Identifier: Apache-2.0
-from typing import Iterable
-
-import tvm
-from tvm import te, tir, ir
-
-
-def tir_store(producer, index: Iterable[tir.PrimExpr], value: tir.PrimExpr) -> tir.BufferStore:
+def tir_store(producer, index, value):
+    from tvm import tir
     if not isinstance(index, Iterable):
         index = [index]
     return tir.ProducerStore(producer, indices=list(index), value=value)
 
 
-def tir_load(producer, index: Iterable[tir.PrimExpr]) -> tir.BufferLoad:
+def tir_load(producer, index):
+    from tvm import tir
     if not isinstance(index, Iterable):
         index = [index]
     return tir.ProducerLoad(producer=producer, indices=list(index))
 
 
-def tir_imm(obj, dtype=None) -> tir.PrimExpr:
+def tir_imm(obj, dtype=None):
+    from tvm import tir
     if isinstance(obj, tir.PrimExpr):
         return obj
     if isinstance(obj, bool):
@@ -32,11 +29,14 @@ def tir_imm(obj, dtype=None) -> tir.PrimExpr:
     assert False
 
 
-def tir_cuda_shared_sync() -> tir.Call:
+def tir_cuda_shared_sync():
+    import tvm
+    from tvm import tir
     return tir.Call(None, 'tir.tvm_storage_sync', tvm.runtime.convert(['shared']))
 
 
 def tir_thread_extent_attr(iter_var, extent=0, body=None):
+    from tvm import tir
     extent = tir_imm(extent)
     return tir.AttrStmt(
         node=iter_var, attr_key='thread_extent',

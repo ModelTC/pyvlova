@@ -4,8 +4,6 @@ from collections import defaultdict
 from functools import reduce
 from contextlib import contextmanager
 
-from tvm import tir, te
-
 from .._ext import isl
 
 from ..utils import tir_load, tir_imm, tir_store, structure_unnamed_fixed_box, cuda_settings
@@ -33,6 +31,7 @@ class CUDAIterVarTable(IterVarTable):
             self.axis_extents[name] //= extents
 
     def push(self, name=None, var=None):
+        from tvm import te
         k = self.axis_cnt[name]
         self.axis_cnt[name] += 1
         name = f'{name}.{chr(ord("x") + k)}'
@@ -134,6 +133,7 @@ class BlockTensorUsage(Tensor):
         )
 
     def usage_extents(self, with_offset):
+        from tvm import tir
         extents = [-(-i // j) for i, j in zip(self.box_size, self.strides)]
         if not with_offset:
             return extents
@@ -197,6 +197,7 @@ class BlockTensorUsage(Tensor):
         return self._build_copy_schedule(cuda_var_table, iter_var_table, stmt)
 
     def _build_copy_schedule(self, cuda_var_table: CUDAIterVarTable, iter_var_table: IterVarTable, stmt: Statement):
+        from tvm import tir
         num_threads = cuda_var_table.axis_extents['threadIdx']
         idx = cuda_var_table.axis_idx['threadIdx']
         total = tir_imm(reduce(tir.Mul, self.usage_extents(True)))

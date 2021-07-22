@@ -20,7 +20,7 @@ def __get_cuda_settings():
             'max_threads': ctx.max_threads_per_block,
             'max_shared_memory': ctx.max_shared_memory_per_block,
         }
-    except tvm.TVMError:
+    finally:
         return {}
 
 

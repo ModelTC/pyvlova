@@ -9,8 +9,6 @@ from types import FunctionType
 from typing import Dict, List, Optional, Tuple, Set, Iterable
 
 import sympy
-import tvm
-from tvm import te, tir
 
 from .._ext import isl
 
@@ -45,6 +43,7 @@ class _EffectiveOpRecorder(object):
         return getattr(self, 'to_stmt_' + trace_mode.mode)(*args, **kwargs)
 
     def to_stmt_tvm(self):
+        from tvm import tir
         assert self.record
         record = self.record[-1]
         if len(record) <= 1:
@@ -70,6 +69,7 @@ record_effective_op = _EffectiveOpRecorder()
 
 class Tensor(object):
     def __init__(self, name, shape, offset=None, dtype='float32'):
+        from tvm import te
         if offset is None:
             offset = [0] * len(shape)
         self.name = name
@@ -128,6 +128,8 @@ class Tensor(object):
         return getattr(self, 'setitem_' + trace_mode.mode)(key, value)
 
     def build_tir_realize(self, scope=None, body=None):
+        import tvm
+        from tvm import tir
         bounds = [tvm.ir.Range(i, i + j) for i, j in zip(self.offset, self.shape)]
         body = tir.ProducerRealize(
             producer=self.te_tensor, bounds=bounds,
@@ -214,6 +216,7 @@ class IterVarTable(object):
         return self.var_stack[-1]
 
     def push(self, name=None, var=None):
+        from tvm import tir
         if name is None:
             name = f'_i{len(self.var_stack)}'
         if var is None:
