@@ -15,12 +15,14 @@ from .sympy2isl import parse_sympy_to_isl_repr, constraints_to_isl_repr, \
 def __get_cuda_settings():
     try:
         import tvm
-        ctx = tvm.cuda()
+        ctx = tvm.device('cuda')
         return {
             'max_threads': ctx.max_threads_per_block,
             'max_shared_memory': ctx.max_shared_memory_per_block,
         }
-    finally:
+    except Exception as e:
+        import warnings
+        warnings.warn(f'cannot fetch cuda device settings, {e}')
         return {}
 
 

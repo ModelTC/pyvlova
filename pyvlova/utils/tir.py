@@ -1,5 +1,8 @@
 # Copyright 2020 Jiang Shenghu
 # SPDX-License-Identifier: Apache-2.0
+from collections.abc import Iterable
+
+
 def tir_store(producer, index, value):
     from tvm import tir
     if not isinstance(index, Iterable):

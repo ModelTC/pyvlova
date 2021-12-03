@@ -7,7 +7,7 @@ import tvm.testing
 import numpy
 
 from pyvlova.models import *
-from pyvlova import calc_mode
+from pyvlova.op import calc_mode
 
 
 n_trials = 8
