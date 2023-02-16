@@ -1,7 +1,7 @@
 # Copyright 2020 Jiang Shenghu
 # SPDX-License-Identifier: Apache-2.0
+from ..op import CombinedOp, ElementwiseAdd, Linear, ReLU, SequenceOp
 from .utils import *
-from ..op import CombinedOp, SequenceOp, ElementwiseAdd, Linear, ReLU
 
 
 class BasicBlock(CombinedOp):
@@ -13,7 +13,9 @@ class BasicBlock(CombinedOp):
         self.relu1 = mock(ReLU, name + '.relu1', self.conv1)
         self.conv2 = conv(name + '.conv2', self.conv1, out_channel, 3, 1, 1)
         self.relu2 = mock(ReLU, name + '.relu2', self.conv2)
-        self.eltwise_add = mock(ElementwiseAdd, name + '.eltwise_add', self.conv2)
+        self.eltwise_add = mock(
+            ElementwiseAdd, name + '.eltwise_add', self.conv2
+        )
         self.batch = self.relu2.batch
         self.out_channel = self.relu2.channel
         self.out_height = self.relu2.height
@@ -41,11 +43,15 @@ class Bottleneck(CombinedOp):
     def __init__(self, name, in_shape, out_channel, stride=1, downsample=None):
         self.conv1 = conv(name + '.conv1', in_shape, out_channel, 1)
         self.relu1 = mock(ReLU, name + '.relu1', self.conv1)
-        self.conv2 = conv(name + '.conv2', self.conv1, out_channel, 3, stride, 1)
+        self.conv2 = conv(
+            name + '.conv2', self.conv1, out_channel, 3, stride, 1
+        )
         self.relu2 = mock(ReLU, name + '.relu2', self.conv2)
         self.conv3 = conv(name + '.conv3', self.conv2, out_channel * 4, 1)
         self.relu3 = mock(ReLU, name + '.relu3', self.conv3)
-        self.eltwise_add = mock(ElementwiseAdd, name + '.eltwise_add', self.conv3)
+        self.eltwise_add = mock(
+            ElementwiseAdd, name + '.eltwise_add', self.conv3
+        )
         self.batch = self.relu3.batch
         self.out_channel = self.relu3.channel
         self.out_height = self.relu3.height
@@ -70,7 +76,16 @@ class Bottleneck(CombinedOp):
 
 
 class ResNet(CombinedOp):
-    def __init__(self, name, in_shape, block, layers, num_classes=1000, deep_stem=False, avg_down=False):
+    def __init__(
+        self,
+        name,
+        in_shape,
+        block,
+        layers,
+        num_classes=1000,
+        deep_stem=False,
+        avg_down=False,
+    ):
         self.inplanes = 64
         self.deep_stem = deep_stem
         self.avg_down = avg_down
@@ -80,30 +95,44 @@ class ResNet(CombinedOp):
             conv2 = conv(name + '.stem.conv2', conv1, 32, 3, 1, 1)
             relu2 = mock(ReLU, name + '.stem.relu2', conv2)
             conv3 = conv(name + '.stem.conv3', conv2, 64, 3, 1, 1)
-            self.conv1 = SequenceOp(name='.stem', ops=[conv1, relu1, conv2, relu2, conv3])
+            self.conv1 = SequenceOp(
+                name='.stem', ops=[conv1, relu1, conv2, relu2, conv3]
+            )
         else:
             self.conv1 = conv(name + '.conv1', in_shape, 64, 7, 2, 3)
         self.relu1 = mock(ReLU, name + '.relu1', self.conv1)
         self.maxpool = pool(name + '.maxpool', self.relu1, 3, 2, 1, 'max')
-        self.layer1 = self._make_layer(name + '.layer1', self.maxpool, block, 64, layers[0])
-        self.layer2 = self._make_layer(name + '.layer2', self.layer1, block, 128, layers[1], stride=2)
-        self.layer3 = self._make_layer(name + '.layer3', self.layer2, block, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(name + '.layer4', self.layer3, block, 512, layers[3], stride=2)
+        self.layer1 = self._make_layer(
+            name + '.layer1', self.maxpool, block, 64, layers[0]
+        )
+        self.layer2 = self._make_layer(
+            name + '.layer2', self.layer1, block, 128, layers[1], stride=2
+        )
+        self.layer3 = self._make_layer(
+            name + '.layer3', self.layer2, block, 256, layers[2], stride=2
+        )
+        self.layer4 = self._make_layer(
+            name + '.layer4', self.layer3, block, 512, layers[3], stride=2
+        )
         self.avgpool = pool(name + '.avgpool', self.layer4, 7, 1, 0, 'avg')
         self.flatten = flatten2d(name + '.flatten', self.avgpool)
         self.fc = Linear(
-            batch=self.flatten.batch, in_channel=512 * block.expansion,
-            out_channel=num_classes, biased=True,
-            name=name + '.linear'
+            batch=self.flatten.batch,
+            in_channel=512 * block.expansion,
+            out_channel=num_classes,
+            biased=True,
+            name=name + '.linear',
         )
         ops = [v for v in self.__dict__.values() if isinstance(v, BaseOp)]
         super().__init__(name=name, ops=ops)
 
-    def _make_layer(self, name, prev, block, planes, blocks, stride=1, avg_down=False):
+    def _make_layer(
+        self, name, prev, block, planes, blocks, stride=1, avg_down=False
+    ):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             if self.avg_down:
-                raise NotImplemented
+                raise NotImplementedError()
                 # downsample = nn.Sequential(
                 #     nn.AvgPool2d(stride, stride=stride, ceil_mode=True, count_include_pad=False),
                 #     nn.Conv2d(self.inplanes, planes * block.expansion,
@@ -111,13 +140,25 @@ class ResNet(CombinedOp):
                 #     BN(planes * block.expansion),
                 # )
             else:
-                downsample = conv(name + '.downsample', prev, planes * block.expansion, 1, stride)
+                downsample = conv(
+                    name + '.downsample',
+                    prev,
+                    planes * block.expansion,
+                    1,
+                    stride,
+                )
 
         layers = []
-        layers.append(block(name + '.' + str(len(layers)), prev, planes, stride, downsample))
+        layers.append(
+            block(
+                name + '.' + str(len(layers)), prev, planes, stride, downsample
+            )
+        )
         self.inplanes = planes * block.expansion
         for i in range(1, blocks):
-            layers.append(block(name + '.' + str(len(layers)), layers[-1], planes))
+            layers.append(
+                block(name + '.' + str(len(layers)), layers[-1], planes)
+            )
 
         return SequenceOp(name=name, ops=layers)
 
@@ -136,5 +177,7 @@ class ResNet(CombinedOp):
 
 
 def resnet18(**kwargs):
-    model = ResNet('resnet18', [1, 3, 224, 224], BasicBlock, [2, 2, 2, 2], **kwargs)
+    model = ResNet(
+        'resnet18', [1, 3, 224, 224], BasicBlock, [2, 2, 2, 2], **kwargs
+    )
     return model

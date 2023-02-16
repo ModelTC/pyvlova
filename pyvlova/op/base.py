@@ -1,18 +1,19 @@
 # Copyright 2020 Jiang Shenghu
 # SPDX-License-Identifier: Apache-2.0
-from itertools import chain
-from typing import Dict, Iterable, Any, List, Callable
 import os
+from itertools import chain
+from typing import Any, Callable, Dict, Iterable, List
 
 import numpy
 import tvm
 from tvm import autotvm
 
-from ..autotune import tune_cuda_tile, default_tune_eval_settings, default_timing_eval_settings
+from ..autotune import (default_timing_eval_settings,
+                        default_tune_eval_settings, tune_cuda_tile)
 from ..codegen import CUDAISLNode2TIR, ISLNode2TIR, lower_tvm_stmt
-from ..poly import Tensor, Statement, TensorTable, ScheduleTree, cuda_tile, cuda_find_sharable_tensors
+from ..poly import (ScheduleTree, Statement, Tensor, TensorTable,
+                    cuda_find_sharable_tensors, cuda_tile)
 from ..utils import Mode, filter_contains, slugify
-
 
 calc_mode = Mode()
 
@@ -26,7 +27,11 @@ class OpParameter(object):
         return '__op_parameter_' + self.name
 
     def mock_poly_tensor(self, instance, tensor: Tensor):
-        setattr(instance, self.hidden_attr, numpy.random.random(tensor.shape).astype(tensor.dtype))
+        setattr(
+            instance,
+            self.hidden_attr,
+            numpy.random.random(tensor.shape).astype(tensor.dtype),
+        )
 
     def __get__(self, instance, owner):
         value = getattr(instance, self.hidden_attr, None)
@@ -55,13 +60,15 @@ class BaseOp(object):
         self.name = name or f'{type(self).__name__}_{id(self)}'
 
     def __getattr__(self, key):
-        raise AttributeError(f'no such attribute {key} for Op {type(self).__name__}')
+        raise AttributeError(
+            f'no such attribute {key} for Op {type(self).__name__}'
+        )
 
     def calc(self, *args, **kwargs):
-        raise NotImplemented
+        raise NotImplementedError()
 
     def imp(self, *args, **kwargs):
-        raise NotImplemented
+        raise NotImplementedError()
 
 
 class CombinedOp(BaseOp):
@@ -97,9 +104,15 @@ class SequenceOp(CombinedOp):
 
 
 class PolyOp(BaseOp):
-    def __init__(self, schedule: ScheduleTree, tensors: TensorTable = None,
-                 inputs: Iterable[str] = None, outputs: Iterable[str] = None,
-                 statements=None, name: str = ''):
+    def __init__(
+        self,
+        schedule: ScheduleTree,
+        tensors: TensorTable = None,
+        inputs: Iterable[str] = None,
+        outputs: Iterable[str] = None,
+        statements=None,
+        name: str = '',
+    ):
         super().__init__(name)
         self.schedule: ScheduleTree = schedule
         self.tensors: TensorTable = tensors or TensorTable()
@@ -108,13 +121,17 @@ class PolyOp(BaseOp):
         if statements is None:
             statements = dict()
         if isinstance(statements, List):
-            statements = {f.__name__: Statement.from_calc(f) for f in statements}
+            statements = {
+                f.__name__: Statement.from_calc(f) for f in statements
+            }
         self.statements: Dict[str, Statement] = dict(statements)
         for s in self.statements.values():
             s.tensor_table = self.tensors
 
     def get_parser(self, factory=ISLNode2TIR, **kwargs):
-        return factory(tensor_table=self.tensors, stmt_table=self.statements, **kwargs)
+        return factory(
+            tensor_table=self.tensors, stmt_table=self.statements, **kwargs
+        )
 
     def calc(self, *args, **kwargs):
         assert calc_mode.mode
@@ -145,7 +162,9 @@ class PolyTVMOp(PolyOp):
             assert isinstance(kwargs[i], tvm.nd.NDArray)
         for i in self.outputs:
             if i not in kwargs:
-                kwargs[i] = tvm.nd.empty(self.tensors[i].shape, self.tensors[i].dtype, device=device)
+                kwargs[i] = tvm.nd.empty(
+                    self.tensors[i].shape, self.tensors[i].dtype, device=device
+                )
 
         imp, arg_map = self._imp[_imp_name]
         imp_args = [None] * len(arg_map)
@@ -166,7 +185,9 @@ class PolyTVMOp(PolyOp):
         name = self.name + '_tvm_llvm'
         parser = self.get_parser(factory=ISLNode2TIR)
         tree = self.schedule.copy()
-        stmts, tensors = build_tvm_stmts(name, tree, parser, te_tensors=te_tensors)
+        stmts, tensors = build_tvm_stmts(
+            name, tree, parser, te_tensors=te_tensors
+        )
         assert all((i.name == j.name for i, j in zip(te_tensors, tensors)))
         with tvm.target.Target('llvm'):
             func = tvm.build(stmts, name=name)
@@ -174,16 +195,25 @@ class PolyTVMOp(PolyOp):
         self._imp['tvm_llvm'] = (func, arg_map)
         return func
 
-    def imp_tvm_cuda(self, tile_size=None, te_tensors=None, do_shared_opt=True, tune_kwargs=None):
+    def imp_tvm_cuda(
+        self,
+        tile_size=None,
+        te_tensors=None,
+        do_shared_opt=True,
+        tune_kwargs=None,
+    ):
         if te_tensors is None:
             te_tensors = [i.te_tensor for i in self.tensors]
         for i in te_tensors:
             assert i.name in self.tensors
         name = self.name + '_tvm_cuda'
-        parser = self.get_parser(factory=CUDAISLNode2TIR, do_shared_opt=do_shared_opt)
+        parser = self.get_parser(
+            factory=CUDAISLNode2TIR, do_shared_opt=do_shared_opt
+        )
         if tile_size is None:
             tile_size, _ = tune_cuda_tile(
-                name, self.schedule, te_tensors, parser, **(tune_kwargs or {}))
+                name, self.schedule, te_tensors, parser, **(tune_kwargs or {})
+            )
         tree = self.schedule.copy()
         cuda_tile(tree, tile_size)
         stmt = parser.parse(tree)
@@ -196,20 +226,25 @@ class PolyTVMOp(PolyOp):
 
     def __getattr__(self, key):
         if key.startswith('calc_tvm_'):
-            name = key[len('calc_'):]
+            name = key[len('calc_') :]
             if 'cuda' in name or 'nvptx' in name or 'gpu' in name:
                 default_device = tvm.gpu()
             else:
                 default_device = tvm.cpu()
 
             def calc(*args, device=None, **kwargs):
-                return self._calc_on_tvm(*args, device=device or default_device, _imp_name=name, **kwargs)
+                return self._calc_on_tvm(
+                    *args,
+                    device=device or default_device,
+                    _imp_name=name,
+                    **kwargs,
+                )
 
             setattr(self, key, calc)
             return calc
 
         if key.startswith('imp_tvm_') and key.endswith('_timing'):
-            target = key[len('imp_tvm_'):-len('_timing')]
+            target = key[len('imp_tvm_') : -len('_timing')]
 
             def _imp_tvm_timing(*args, timing_number=20, **kwargs):
                 if 'tvm_' + target not in self._imp:
@@ -222,9 +257,13 @@ class PolyTVMOp(PolyOp):
                         if isinstance(i, tvm.nd.NDArray):
                             device = i.device
                             break
-                    evaluator = func.time_evaluator(func.entry_name, device, **default_timing_eval_settings)
+                    evaluator = func.time_evaluator(
+                        func.entry_name, device, **default_timing_eval_settings
+                    )
                     t = evaluator(*t_args, **t_kwargs).mean
-                    print(self.name, 'tvm timing', target, '%.9f us' % (t * 1e6))
+                    print(
+                        self.name, 'tvm timing', target, '%.9f us' % (t * 1e6)
+                    )
                     timing.t = t
 
                 self._imp[f'tvm_{target}_timing'] = (timing, arg_map)
@@ -248,19 +287,30 @@ class PolyTVMOp(PolyOp):
         preserve_log = tune_kwargs.get('preserve_log', False)
         tmp_file_name = slugify(name) + '.topi_cuda.log'
         if n_trial > 0:
-            task = autotvm.task.create(self.topi_cuda_task_name, args=args, target='cuda')
+            task = autotvm.task.create(
+                self.topi_cuda_task_name, args=args, target='cuda'
+            )
             tuner = tune_kwargs.get('tuner', autotvm.tuner.XGBTuner(task))
             tuner.tune(
                 n_trial=n_trial,
                 measure_option={
-                    'builder': tune_kwargs.get('builder', autotvm.LocalBuilder()),
-                    'runner': tune_kwargs.get('runner', autotvm.LocalRunner(timeout=20, **default_tune_eval_settings)),
+                    'builder': tune_kwargs.get(
+                        'builder', autotvm.LocalBuilder()
+                    ),
+                    'runner': tune_kwargs.get(
+                        'runner',
+                        autotvm.LocalRunner(
+                            timeout=20, **default_tune_eval_settings
+                        ),
+                    ),
                 },
                 callbacks=[
-                    autotvm.callback.progress_bar(n_trial, prefix=f'TOPI {name}'),
+                    autotvm.callback.progress_bar(
+                        n_trial, prefix=f'TOPI {name}'
+                    ),
                     autotvm.callback.log_to_file(tmp_file_name),
-                    *tune_kwargs.get('callbacks', [])
-                ]
+                    *tune_kwargs.get('callbacks', []),
+                ],
             )
         with autotvm.apply_history_best(tmp_file_name):
             result = self._build_topi_cuda(name, args, te_tensors)
@@ -291,7 +341,9 @@ class PolyTVMOp(PolyOp):
         with tvm.target.Target('cuda'):
             args = self.topi_cuda_args(**ts)
             if self.topi_cuda_task_name:
-                func = self._tune_topi_cuda(name, args, te_tensors, tune_kwargs)
+                func = self._tune_topi_cuda(
+                    name, args, te_tensors, tune_kwargs
+                )
             else:
                 func = self._build_topi_cuda(name, args, te_tensors)
         arg_map = {v: i for i, v in enumerate(self.tensor_order)}
@@ -312,7 +364,9 @@ class ArgumentedOp(PolyTVMOp):
 
     @classmethod
     def filter_args(cls, args):
-        return filter_contains(args, cls.required_args, cls.optional_args, cls.calculated_args)
+        return filter_contains(
+            args, cls.required_args, cls.optional_args, cls.calculated_args
+        )
 
     def __init__(self, **kwargs):
         self.arguments = dict()
@@ -339,7 +393,7 @@ class ArgumentedOp(PolyTVMOp):
             schedule=type(self).schedule_factory(**self.arguments),
             tensors=type(self).tensors_factory(**self.arguments),
             statements=type(self).statements_factory(**self.arguments),
-            **kwargs
+            **kwargs,
         )
 
     def imp_tvm_llvm(self, te_tensors=None, **kwargs):
