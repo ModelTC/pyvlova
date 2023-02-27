@@ -1,7 +1,7 @@
 # Copyright 2020 Jiang Shenghu
 # SPDX-License-Identifier: Apache-2.0
 import re
-from collections import Mapping
+from collections.abc import Mapping
 from functools import reduce
 from itertools import chain
 
