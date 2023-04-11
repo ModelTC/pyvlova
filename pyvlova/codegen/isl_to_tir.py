@@ -94,20 +94,35 @@ class ISLExpr2TIR(ISLExprParser):
     def parse_op_and(self, expr, parent):
         return tir.And(self.parse(expr.arg(0), expr), self.parse(expr.arg(1), expr))
 
+    parse_op_and_then = parse_op_and
+
     def parse_op_or(self, expr, parent):
         return tir.Or(self.parse(expr.arg(0), expr), self.parse(expr.arg(1), expr))
+
+    parse_op_or_else = parse_op_or
 
     def parse_op_fdiv_q(self, expr, parent):
         return tir.FloorDiv(self.parse(expr.arg(0), expr), self.parse(expr.arg(1), expr))
 
+    parse_op_div = parse_op_fdiv_q
+    parse_op_pdiv_q = parse_op_fdiv_q
+
     def parse_op_pdiv_r(self, expr, parent):
-        return tir.Mod(self.parse(expr.arg(0), expr), self.parse(expr.arg(1), expr))
+        return tir.FloorMod(self.parse(expr.arg(0), expr), self.parse(expr.arg(1), expr))
+
+    parse_op_zdiv_r = parse_op_pdiv_r
 
     def parse_op_min(self, expr, parent):
         return tir.Min(self.parse(expr.arg(0), expr), self.parse(expr.arg(1), expr))
 
     def parse_op_max(self, expr, parent):
         return tir.Max(self.parse(expr.arg(0), expr), self.parse(expr.arg(1), expr))
+
+    def parse_op_cond(self, expr, parent):
+        return tir.if_then_else(*(self.parse(expr.arg(i), expr) for i in range(3)))
+
+    def parse_op_select(self, expr, parent):
+        return tir.Select(*(self.parse(expr.arg(i), expr) for i in range(3)))
 
 
 class ISLNode2TIR(ISLNodeParser):
