@@ -351,9 +351,9 @@ class ExpansionNode(NodeWithSingleChild):
 
 
 class BandNode(NodeWithSingleChild):
-    fields: List[str] = ['schedule', 'coincident', 'permutable']
+    fields: List[str] = ['schedule', 'coincident', 'permutable', 'options']
 
-    def __init__(self, schedule=None, coincident=None, permutable=None, **kwargs):
+    def __init__(self, schedule=None, coincident=None, permutable=None, options=None, **kwargs):
         super().__init__(**kwargs)
         if schedule is None or isinstance(schedule, str):
             schedule = isl.multi_union_pw_aff(schedule or '[]')
@@ -364,6 +364,7 @@ class BandNode(NodeWithSingleChild):
         self.schedule: isl.multi_union_pw_aff = schedule
         self.coincident: List[bool] = coincident
         self.permutable: bool = bool(permutable)
+        self.options: isl.union_set = options or isl.union_set('{}')
 
     def call_on_fields(self, func_name, *args, **kwargs):
         if func_name == 'intersect_params':
@@ -384,6 +385,7 @@ class BandNode(NodeWithSingleChild):
         res['schedule'] = str(node.schedule)
         res['coincident'] = list(map(int, map(bool, node.coincident)))
         res['permutable'] = int(bool(node.permutable))
+        res['options'] = str(node.options)
         if self.child:
             res[self.child_repr] = self._children_to_vanilla()
         return res
