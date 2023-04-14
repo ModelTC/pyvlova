@@ -38,7 +38,8 @@ def base_dict_from_isl_node_band(node: isl.schedule_node_band) -> Dict[str, Any]
     schedule = node.partial_schedule()
     permutable = node.permutable()
     coincident = [node.member_get_coincident(i) for i in range(schedule.size())]
-    return {'schedule': schedule, 'coincident': coincident, 'permutable': permutable}
+    options = node.options()
+    return {'schedule': schedule, 'coincident': coincident, 'permutable': permutable, 'options': options}
 
 
 def base_dict_from_isl_node(node: isl.schedule_node) -> Dict[str, Any]:
@@ -357,6 +358,8 @@ class BandNode(NodeWithSingleChild):
         super().__init__(**kwargs)
         if schedule is None or isinstance(schedule, str):
             schedule = isl.multi_union_pw_aff(schedule or '[]')
+        if options is None or isinstance(options, str):
+            options = isl.union_set(options or '{}')
         if coincident is None:
             coincident = [False] * schedule.size()
         else:
@@ -364,7 +367,7 @@ class BandNode(NodeWithSingleChild):
         self.schedule: isl.multi_union_pw_aff = schedule
         self.coincident: List[bool] = coincident
         self.permutable: bool = bool(permutable)
-        self.options: isl.union_set = options or isl.union_set('{}')
+        self.options: isl.union_set = options
 
     def call_on_fields(self, func_name, *args, **kwargs):
         if func_name == 'intersect_params':
